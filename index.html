@@ -61,17 +61,52 @@ function fbInit() {
 }
 
 function fbSaveConfig() {
-  const raw = document.getElementById('fb-cfg-input').value.trim();
+  // Normalizar comillas "inteligentes" que el teclado móvil puede insertar
+  let raw = document.getElementById('fb-cfg-input').value.trim()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
   const errEl = document.getElementById('fb-cfg-error');
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+
+  // Validar que no esté vacío
+  if(!raw) {
+    errEl.textContent = '⚠️ Pegá tu configuración de Firebase primero';
+    errEl.style.display = 'block';
+    return;
+  }
+
   try {
     const cfg = JSON.parse(raw);
-    if(!cfg.apiKey || !cfg.databaseURL) throw new Error('Faltan campos: apiKey y databaseURL son requeridos');
-    localStorage.setItem(FB_CFG_KEY, raw);
-    if(fbInit()) {
-      document.getElementById('fb-config-panel').style.display = 'none';
-      document.getElementById('fb-main-panel').style.display   = 'flex';
-      toast('🔥 Firebase conectado', 2000);
-    } else throw new Error('No se pudo inicializar Firebase con esa config');
+    if(!cfg.apiKey)      throw new Error('Falta el campo apiKey');
+    if(!cfg.databaseURL) throw new Error('Falta el campo databaseURL');
+
+    localStorage.setItem(FB_CFG_KEY, JSON.stringify(cfg));
+
+    // Intentar inicializar Firebase
+    try {
+      if(_fbApp) {
+        // Ya existe una app, solo actualizar DB
+        _fbDb = firebase.database(_fbApp);
+      } else {
+        _fbApp = firebase.initializeApp(cfg);
+        _fbDb  = firebase.database(_fbApp);
+      }
+    } catch(initErr) {
+      // Si ya existe la app con ese nombre, usarla
+      try {
+        _fbApp = firebase.app();
+        _fbDb  = firebase.database(_fbApp);
+      } catch(e2) {
+        throw new Error('No se pudo inicializar Firebase: ' + initErr.message);
+      }
+    }
+
+    // Probar conexión rápida
+    document.getElementById('fb-config-panel').style.display = 'none';
+    document.getElementById('fb-main-panel').style.display   = 'flex';
+    toast('🔥 Firebase conectado', 2000);
+
   } catch(e) {
     errEl.textContent = '⚠️ ' + e.message;
     errEl.style.display = 'block';
@@ -114,7 +149,15 @@ function openFbLobby() {
 
 function fbLobbyBack() {
   fbCleanup();
-  nav('play-screen');
+  const playScreen = document.getElementById("play-screen");
+  const mainScreen = document.getElementById("main-screen") || document.getElementById("home-screen");
+  if(playScreen) nav("play-screen");
+  else if(mainScreen) nav(mainScreen.id);
+  else {
+    const screens = document.querySelectorAll(".screen");
+    const first = Array.from(screens).find(s => s.id !== "fb-screen");
+    if(first) nav(first.id);
+  }
 }
 
 function fbNameChanged() {
@@ -460,13 +503,15 @@ function _onlineFullSync(action) {
 }
 
 </script>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@15.1.0/dist/twemoji.min.js" crossorigin="anonymous"></script>
 
   <!-- Firebase (modo Internet) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;900&display=swap');
 :root {
@@ -1680,6 +1725,7 @@ body.bg-custom::before{display:none;}
 .lobby-status{font-size:13px;color:var(--text2);text-align:center;display:flex;align-items:center;gap:8px;}
 .lobby-dot{width:10px;height:10px;border-radius:50%;background:var(--amber);animation:pulse3 1s infinite;}
 .lobby-dot.green{background:#7CFC00;animation:none;}
+.lobby-dot.orange { background:#FF8C00; box-shadow:0 0 6px #FF8C00; }
 @keyframes pulse3{0%,100%{opacity:1;}50%{opacity:.3;}}
 .lobby-join-box{background:var(--bg2);border:1px solid var(--card-border);border-radius:14px;padding:16px;width:100%;max-width:320px;}
 .lobby-join-box label{font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:8px;}
@@ -1850,24 +1896,4 @@ body.bg-custom::before{display:none;}
   grid-column:1 / -1;
 }
 .skill-cat-header:active{background:rgba(255,255,255,.09);}
-.skill-cat-icon{font-size:15px;line-height:1;}
-.skill-cat-label{font-size:11px;font-weight:900;letter-spacing:.8px;text-transform:uppercase;flex:1;color:var(--text2);}
-.skill-cat-arrow{font-size:10px;color:var(--text3);transition:transform .2s;}
-.skill-cat-arrow.open{transform:rotate(180deg);}
-.skill-cat-body{display:none;grid-column:1 / -1;}
-.skill-cat-body.open{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:2px 0 4px;}
-/* colores por categoría */
-.skill-cat-header.cat-none{border-color:rgba(255,255,255,.1);}
-.skill-cat-header.cat-attack{background:rgba(226,75,74,.07);border-color:rgba(226,75,74,.25);}
-.skill-cat-header.cat-attack .skill-cat-label{color:#ff8080;}
-.skill-cat-header.cat-heal{background:rgba(59,109,17,.08);border-color:rgba(124,252,0,.2);}
-.skill-cat-header.cat-heal .skill-cat-label{color:#a0e060;}
-.skill-cat-header.cat-shield{background:rgba(24,95,165,.08);border-color:rgba(24,95,165,.3);}
-.skill-cat-header.cat-shield .skill-cat-label{color:var(--blue2);}
-.skill-cat-header.cat-support{background:rgba(83,74,183,.08);border-color:rgba(83,74,183,.3);}
-.skill-cat-header.cat-support .skill-cat-label{color:var(--purple2);}
-.skill-cat-header.cat-dot{background:rgba(180,20,40,.07);border-color:rgba(220,60,60,.25);}
-.skill-cat-header.cat-dot .skill-cat-label{color:#f08080;}
-
-/* ── Animaciones de batalla ── */
-@keyframes cardA
+.sk
