@@ -1,0 +1,192 @@
+# ═══════════════════════════════════════════════════════════════
+#  KARTALIA · Compilar APK con GitHub Actions
+#
+#  ARCHIVOS (todos sueltos, el resto lo genera este workflow):
+#    index.html                    -> el juego (raíz del repositorio)
+#    version.txt                   -> solo el número, ej: 1.0
+#    .github/workflows/build.yml   -> ESTE archivo
+#    icon.png (opcional)           -> icono cuadrado de la app
+#
+#  VERSIÓN NUEVA: sube el index.html nuevo y cambia el número de
+#  version.txt (1.0 -> 1.1 -> 1.2 ...). Al guardar version.txt se
+#  compila solo y el APK aparece en "Releases" del repositorio.
+#  También sirve "Actions -> Compilar APK Kartalia -> Run workflow".
+#
+#  SECRETO (una sola vez): Settings -> Secrets and variables ->
+#  Actions -> New repository secret
+#     KEYSTORE_PASSWORD = contraseña larga inventada por ti (guárdala)
+#                         solo letras SIN tilde/ñ, números y símbolos
+#
+#  NO CAMBIES: APP_ID, la contraseña, ni borres
+#  signing/kartalia.keystore.enc (lo crea el primer build).
+#  Con eso todas las versiones llevan la MISMA firma y Android
+#  las instala como actualización sin conflicto de paquete.
+# ═══════════════════════════════════════════════════════════════
+name: Compilar APK Kartalia
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['version.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
+
+env:
+  APP_NAME: Kartalia
+  APP_ID: app.kartalia.juego
+  GAME_HTML: index.html
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Leer la version de version.txt
+        id: ver
+        run: |
+          set -euo pipefail
+          test -f version.txt || { echo "::error::Falta version.txt (contenido de ejemplo: 1.0)"; exit 1; }
+          test -f "$GAME_HTML" || { echo "::error::No encuentro $GAME_HTML en la raíz del repositorio"; exit 1; }
+          VER=$(tr -d ' \t\r\n' < version.txt | sed 's/^[vV]//')
+          echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || { echo "::error::version.txt debe verse así: 1.0, 1.1, 1.2 (leí: '$VER')"; exit 1; }
+          IFS=. read -r MA MI PA <<< "$VER"; PA=${PA:-0}
+          if [ "$((10#$MI))" -gt 99 ] || [ "$((10#$PA))" -gt 99 ]; then echo "::error::Los números después del primer punto van de 0 a 99"; exit 1; fi
+          CODE=$((10#$MA * 10000 + 10#$MI * 100 + 10#$PA))
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Versión $VER (versionCode $CODE)"
+
+      - name: Instalar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firma estable (keystore cifrada dentro del repo)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::Falta el secreto KEYSTORE_PASSWORD (Settings -> Secrets and variables -> Actions)"; exit 1
+          fi
+          if printf '%s' "$KEYSTORE_PASSWORD" | LC_ALL=C grep -q '[^ -~]'; then
+            echo "::error::KEYSTORE_PASSWORD solo puede tener letras SIN tilde, números y símbolos (nada de ñ, tildes ni emojis)"; exit 1
+          fi
+          ENC=signing/kartalia.keystore.enc
+          KS="$RUNNER_TEMP/release.keystore"
+          if [ -f "$ENC" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ENC" -out "$KS" -pass env:KEYSTORE_PASSWORD
+            echo "Keystore existente descifrada"
+          else
+            keytool -genkeypair -storetype PKCS12 -keystore "$KS" -alias kartalia -keyalg RSA -keysize 2048 -validity 36500 -storepass:env KEYSTORE_PASSWORD -keypass:env KEYSTORE_PASSWORD -dname "CN=Kartalia, O=KennyKressinR, C=PY"
+            mkdir -p signing
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$KS" -out "$ENC" -pass env:KEYSTORE_PASSWORD
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$ENC"
+            git commit -m "Keystore cifrada de Kartalia (NO borrar este archivo)"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "Keystore nueva creada y guardada en $ENC"
+          fi
+          keytool -list -keystore "$KS" -alias kartalia -storepass:env KEYSTORE_PASSWORD > /dev/null
+          echo "KS_PATH=$KS" >> "$GITHUB_ENV"
+
+      - name: Crear el proyecto Android con Capacitor
+        run: |
+          set -euo pipefail
+          mkdir -p www && cp "$GAME_HTML" www/index.html
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npx cap telemetry off || true
+          printf '{"appId":"%s","appName":"%s","webDir":"www"}\n' "$APP_ID" "$APP_NAME" > capacitor.config.json
+          npx cap add android
+
+      - name: Icono (si subiste icon.png)
+        run: |
+          IM=$(command -v magick || command -v convert || true)
+          if [ ! -f icon.png ]; then echo "Sin icon.png: se usa el icono por defecto"; exit 0; fi
+          if [ -z "$IM" ]; then echo "::warning::No hay ImageMagick, se usa el icono por defecto"; exit 0; fi
+          RES=android/app/src/main/res
+          rm -rf "$RES"/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            n=${d%%:*}; s=${d##*:}; mkdir -p "$RES/mipmap-$n"
+            "$IM" icon.png -resize "${s}x${s}!" "$RES/mipmap-$n/ic_launcher.png" \
+              && cp "$RES/mipmap-$n/ic_launcher.png" "$RES/mipmap-$n/ic_launcher_round.png" \
+              || echo "::warning::No pude generar el icono $n"
+          done
+
+      - name: Poner la version en el APK
+        env:
+          VER: ${{ steps.ver.outputs.ver }}
+          CODE: ${{ steps.ver.outputs.code }}
+        run: |
+          set -euo pipefail
+          G=android/app/build.gradle
+          sed -E -i "s/(versionCode[[:space:]]*=?[[:space:]]*)[0-9]+/\1$CODE/; s/(versionName[[:space:]]*=?[[:space:]]*)\"[^\"]*\"/\1\"$VER\"/" "$G"
+          grep -Eq "versionCode[[:space:]]*=?[[:space:]]*$CODE([^0-9]|$)" "$G" && grep -Eq "versionName[[:space:]]*=?[[:space:]]*\"$VER\"" "$G" \
+            || { echo "::error::No pude escribir la versión en build.gradle"; grep -nE "versionCode|versionName" "$G" || true; exit 1; }
+          grep -nE "applicationId|versionCode|versionName" "$G"
+
+      - name: Compilar el APK
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Firmar el APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          set -euo pipefail
+          SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          OUT="Kartalia-v${VER}.apk"
+          "$BT/zipalign" -p -f 4 "$SRC" aligned.apk
+          "$BT/apksigner" sign --ks "$KS_PATH" --ks-key-alias kartalia --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out "$OUT" aligned.apk
+          "$BT/apksigner" verify --print-certs "$OUT" | tee cert.txt
+          echo "CERT_SHA=$(grep -m1 'SHA-256' cert.txt | sed 's/.*: //')" >> "$GITHUB_ENV"
+          echo "APK=$OUT" >> "$GITHUB_ENV"
+
+      - name: Guardar el APK como archivo del build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kartalia-v${{ steps.ver.outputs.ver }}
+          path: Kartalia-v*.apk
+
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.ver.outputs.ver }}
+          CODE: ${{ steps.ver.outputs.code }}
+        run: |
+          set -euo pipefail
+          TAG="v${VER}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "Kartalia $TAG" --notes "APK firmado de Kartalia $TAG"
+          fi
+          {
+            echo "### Kartalia $TAG compilada"
+            echo "- versionCode: $CODE"
+            echo "- Huella de la firma (tiene que ser SIEMPRE la misma): \`$CERT_SHA\`"
+            echo "- Descarga: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
