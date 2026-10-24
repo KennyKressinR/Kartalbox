@@ -2925,7 +2925,7 @@ body.bg-custom::before{display:none;}
           <div class="stat-row">
             <span class="sbadge hp">HP</span>
             <button class="pm-btn" onclick="stepStat('hp',-1)">−</button>
-            <input type="range" id="inp-hp" min="100" max="600" value="150" step="1" oninput="onHp(snapStat(this,100))">
+            <input type="range" id="inp-hp" min="100" max="600" value="70" step="1" oninput="onHp(snapStat(this,20))">
             <button class="pm-btn" onclick="stepStat('hp',1)">+</button>
           </div>
         </div>
@@ -2938,7 +2938,7 @@ body.bg-custom::before{display:none;}
           <div class="stat-row">
             <span class="sbadge atk">ATK</span>
             <button class="pm-btn" onclick="stepStat('atk',-1)">−</button>
-            <input type="range" id="inp-atk" min="10" max="100" value="30" step="1" oninput="onAtk(snapStat(this,10))">
+            <input type="range" id="inp-atk" min="10" max="100" value="20" step="1" oninput="onAtk(snapStat(this,5))">
             <button class="pm-btn" onclick="stepStat('atk',1)">+</button>
           </div>
         </div>
@@ -3001,7 +3001,7 @@ body.bg-custom::before{display:none;}
           <div class="stat-row">
             <span class="sbadge rem">PA</span>
             <button class="pm-btn" onclick="stepCustom('inp-pasurge-amount-1','pasurge-lbl-1',2,20,-1,1)">−</button>
-            <input type="range" id="inp-pasurge-amount-1" min="2" max="20" value="2" step="1" oninput="syncCustom('pasurge-lbl-1',+this.value)" style="flex:1;">
+            <input type="range" id="inp-pasurge-amount-1" min="2" max="5" value="2" step="1" oninput="syncCustom('pasurge-lbl-1',+this.value)" style="flex:1;">
             <button class="pm-btn" onclick="stepCustom('inp-pasurge-amount-1','pasurge-lbl-1',2,20,1,1)">+</button>
           </div>
         </div>
@@ -3095,7 +3095,7 @@ body.bg-custom::before{display:none;}
           <div class="stat-row">
             <span class="sbadge rem">PA</span>
             <button class="pm-btn" onclick="stepCustom('inp-pasurge-amount-2','pasurge-lbl-2',2,20,-1,1)">−</button>
-            <input type="range" id="inp-pasurge-amount-2" min="2" max="20" value="2" step="1" oninput="syncCustom('pasurge-lbl-2',+this.value)" style="flex:1;">
+            <input type="range" id="inp-pasurge-amount-2" min="2" max="5" value="2" step="1" oninput="syncCustom('pasurge-lbl-2',+this.value)" style="flex:1;">
             <button class="pm-btn" onclick="stepCustom('inp-pasurge-amount-2','pasurge-lbl-2',2,20,1,1)">+</button>
           </div>
         </div>
@@ -3915,6 +3915,7 @@ body.bg-custom::before{display:none;}
         <div class="lobby-dot" id="lobby-dot"></div>
         <span id="lobby-status-txt">Esperando que tu amigo se conecte...</span>
       </div>
+      <button class="start-btn" id="lobby-start-btn" onclick="_lanHostContinue()" style="display:none;width:100%;">▶️ CONTINUAR</button>
     </div>
     <!-- GUEST: ingresa código -->
     <div id="lobby-join-panel" style="display:none;width:100%;flex-direction:column;align-items:center;gap:14px;">
@@ -4937,17 +4938,15 @@ body.bg-custom::before{display:none;}
 /* ================================================================
    CONSTANTES
 ================================================================ */
-const STAT_MAX     = 600;   // HP máximo
-const HP_MIN = 100, ATK_MIN = 10, ATK_MAX = 100;   // BALANCE v2: límites de estadísticas (ATK máx. absoluto en todo el juego)
-const PA_REGEN = 2;       // BALANCE v2: PA que se recuperan al inicio de cada turno propio (único punto: endTurn)
+const STAT_MAX     = 600;
 const PA_BONUS_MAX = 999;
 // PA rules — overridden by CFG at runtime
 function PA_BASE_VAL() { return CFG.rulesPaBase  !== undefined ? CFG.rulesPaBase  : 3; }
-function PA_MAX_VAL()  { return Math.min(8, Math.max(1, CFG.rulesPaMax !== undefined ? (+CFG.rulesPaMax || 8) : 8)); }   // tope duro: 8 PA
+function PA_MAX_VAL()  { return CFG.rulesPaMax   !== undefined ? CFG.rulesPaMax   : 8; }
 function PA_SWAP_MIN() { return CFG.rulesSwapMin !== undefined ? CFG.rulesSwapMin : 2; }
 function RULES_DECK_MAX() { return CFG.rulesDeckMax !== undefined ? CFG.rulesDeckMax : 10; }
 // Legacy aliases used throughout the code (keep backward compat)
-let PA_BASE = 3;
+let PA_BASE = 4;
 let PA_MAX  = 8;
 
 /* ================================================================
@@ -5039,28 +5038,28 @@ const COMBO_HIT_LABELS = {
 const SKILLS = [
   {id:'none',      name:'Sin habilidad',   desc:'—',                                                                                    short:'—',             pa:0},
   {id:'shield',    name:'🛡️ Escudo',       desc:'Bloquea 50% del próximo ataque recibido',                                             short:'Escudo 50%',    pa:2},
-  {id:'heal',      name:'💚 Curación',     desc:'Recupera HP al instante (configurable 20–150 HP por carta)',                           short:'+HP custom',    pa:2},
-  {id:'regen',     name:'💛 Regenerar',    desc:'Cura HP/turno por 3 turnos (configurable 10–120 HP/turno)',                             short:'Regen x3',      pa:3},
-  {id:'buff',      name:'🔥 Furia',        desc:'Próximo ataque +20 daño (subido de +15 para valer el costo)',                         short:'ATK+20',        pa:2},
-  {id:'fire',      name:'🔥 Fuego',        desc:'Quema al rival: daño/turno por 3 turnos (configurable 10–120 dmg/turno)',              short:'Quema x3',      pa:3},
-  {id:'poison',    name:'☠️ Veneno',       desc:'Envenena al rival: daño creciente 12→20→30 por 3 turnos (total 62 dmg)',             short:'Veneno',        pa:3},
-  {id:'barrier',   name:'🔵 Barrera',      desc:'Absorbe los primeros 60 puntos de daño (subido de 30, rebalance 10/10)',                              short:'Barrera 60',    pa:3},
-  {id:'stun',      name:'⚡ Parálisis',    desc:'Rival pierde 3 PA el próximo turno (subido de 2)',                                   short:'-3 PA rival',   pa:3},
-  {id:'double',    name:'⚔️ Doble Golpe',  desc:'Dos ataques seguidos, cada uno con +8 daño extra (dado por golpe)',                 short:'x2 atk+8c/u',  pa:4},
-  {id:'triple',    name:'⚔️⚔️ Triple Golpe',desc:'Tres ataques: +12 dmg en el 1° y 2°, y +30 dmg extra en el último (dado por golpe)', short:'x3 (+12+12+30)',pa:5},
-  {id:'quad',      name:'💥 Golpe Cuádruple',desc:'Cuatro ataques: +10 dmg en los tres primeros, y +25 dmg extra en el último (dado c/u)', short:'x4 (+10×3+25)',pa:6},
-  {id:'pasurge',   name:'⚡ PA Surge',     desc:'Gana PA extra ahora (config. 2–20 PA). Contra: próximo golpe recibido hace +50% daño', short:'+PA ahora',     pa:2},
-  {id:'sacrifice', name:'🩸 Sacrificio',   desc:'Perdés 40% HP, tu próximo golpe hace +60% daño, y regenerás 6 HP/turno por 3 turnos',short:'Sacrificio',    pa:4},
-  {id:'freeze',    name:'❄️ Congelar',     desc:'Salta el turno del rival. El rival vuelve con +4 PA acumulados.',                    short:'Congela rival', pa:4},
-  {id:'sleep',     name:'😴 Sueño',        desc:'El rival pierde su turno. Mientras dure el sueño, tus ataques solo hacen 3 de daño.',short:'Sueño rival',   pa:4},
-  {id:'shielddice',name:'🎲 Escudo Dado',  desc:'Tirás el dado: obtenés dado × 3 puntos de escudo absorbente (ej: 5 → 15 escudo)',   short:'Esc.×dado×3',   pa:2},
-  {id:'vampstrike',name:'🧛 Golpe Vampiro',desc:'Tu ataque cura el 100% del daño infligido (además de hacerlo). Dado normal.',       short:'Cura=daño hecho',pa:3},
-  {id:'lastcard',  name:'💀 Carta Final',  desc:'Tu carta se sacrifica al instante y hace daño igual a su HP actual al rival. La siguiente carta que despliegues gana ATK bonus configurable y +2 PA en su primer turno.', short:'Sacr.→daño HP+bono sig.',pa:4},
-  {id:'explosion', name:'💥 Explosión',    desc:'Tu carta explota: muere al instante y hace daño igual a su HP actual + su ATK al rival', short:'Muere→daño HP+ATK',  pa:5},
+  {id:'heal',      name:'💚 Curación',     desc:'Recupera el 12% de tus HP máx al instante (máx 50 HP)',                           short:'+HP custom',    pa:2},
+  {id:'regen',     name:'💛 Regenerar',    desc:'Cura el 4% de tus HP máx por turno durante 3 turnos (máx 20 HP/turno; renueva)',                             short:'Regen x3',      pa:3},
+  {id:'buff',      name:'🔥 Furia',        desc:'Próximo ataque +25% de daño (se consume, no se acumula)',                         short:'ATK+20',        pa:2},
+  {id:'fire',      name:'🔥 Fuego',        desc:'Quema al rival: 3% de sus HP máx por turno durante 3 turnos (renueva, no se acumula)',              short:'Quema x3',      pa:3},
+  {id:'poison',    name:'☠️ Veneno',       desc:'Envenena al rival: daño creciente 1,5% → 2% → 3% de sus HP máx durante 3 turnos (renueva)',             short:'Veneno',        pa:3},
+  {id:'barrier',   name:'🔵 Barrera',      desc:'Absorbe 50 puntos de daño durante 2 turnos (renueva, no se acumula)',                              short:'Barrera 60',    pa:3},
+  {id:'stun',      name:'⚡ Parálisis',    desc:'Rival pierde 2 PA el próximo turno (nunca baja de 1 PA)',                                   short:'-3 PA rival',   pa:3},
+  {id:'double',    name:'⚔️ Doble Golpe',  desc:'Dos golpes, cada uno al 55% del daño (dado por golpe)',                 short:'x2 atk+8c/u',  pa:3},
+  {id:'triple',    name:'⚔️⚔️ Triple Golpe',desc:'Tres golpes, cada uno al 40% del daño (dado por golpe)', short:'x3 (+12+12+30)',pa:4},
+  {id:'quad',      name:'💥 Golpe Cuádruple',desc:'Cuatro golpes, cada uno al 30% del daño (dado c/u)', short:'x4 (+10×3+25)',pa:5},
+  {id:'pasurge',   name:'⚡ PA Surge',     desc:'Gana PA extra ahora (config. 2–5 PA). Contra: próximo golpe recibido hace +50% daño', short:'+PA ahora',     pa:2},
+  {id:'sacrifice', name:'🩸 Sacrificio',   desc:'Perdés el 25% de tus HP actuales, tu próximo golpe hace +35% daño y regenerás 4 HP/turno por 3 turnos',short:'Sacrificio',    pa:3},
+  {id:'freeze',    name:'❄️ Congelar',     desc:'Salta el turno del rival. El rival vuelve con +4 PA acumulados.',                    short:'Congela rival', pa:3},
+  {id:'sleep',     name:'😴 Sueño',        desc:'El rival pierde su turno. Mientras dure el sueño, tus ataques solo hacen 3 de daño.',short:'Sueño rival',   pa:3},
+  {id:'shielddice',name:'🎲 Escudo Dado',  desc:'Tirás el dado: obtenés dado × 3 puntos de escudo absorbente (ej: 5 → 15 escudo; máx 18, no se acumula por encima)',   short:'Esc.×dado×3',   pa:2},
+  {id:'vampstrike',name:'🧛 Golpe Vampiro',desc:'Tu ataque cura el 40% del daño infligido, máx 25 HP. Dado normal.',       short:'Cura=daño hecho',pa:3},
+  {id:'lastcard',  name:'💀 Carta Final',  desc:'Tu carta se sacrifica al instante y hace daño igual a su HP actual al rival (máx 35% de los HP máx del rival). La siguiente carta que despliegues gana ATK bonus configurable y +2 PA en su primer turno.', short:'Sacr.→daño HP+bono sig.',pa:2},
+  {id:'explosion', name:'💥 Explosión',    desc:'Tu carta explota: muere al instante y hace daño igual a su HP actual + su ATK al rival (máx 35% de los HP máx del rival)', short:'Muere→daño HP+ATK',  pa:1},
   {id:'armorbreak',name:'⚒️ Rompe-Armadura',desc:'El rival pierde toda barrera/escudo activos + su siguiente ataque hace 60% daño por 1 turno', short:'Rompe escudos rival', pa:3},
-  {id:'rally',     name:'📣 Refortalecer', desc:'Recuperás el 30% de tu HP máximo y ganás +1 PA adicional este turno',              short:'+30%HP +1PA',   pa:3},
+  {id:'rally',     name:'📣 Refortalecer', desc:'Recuperás el 15% de tu HP máx (máx 50 HP) y ganás +1 PA (sin pasar del máximo)',              short:'+30%HP +1PA',   pa:3},
   {id:'decoy',     name:'🪄 Señuelo',      desc:'El próximo ataque físico del rival falla automáticamente (sin dado)',               short:'Evita 1 ataque', pa:2},
-  {id:'cut',       name:'🩸 Corte',        desc:'Inflige sangrado al rival: X% de su HP base/turno por 3 turnos (config. 5–20%)',     short:'Sangrado x3 %HP', pa:3},
+  {id:'cut',       name:'🩸 Corte',        desc:'Inflige sangrado al rival: 2% de los HP máx del rival por turno durante 3 turnos (renueva)',     short:'Sangrado x3 %HP', pa:3},
 ];
 
 /* ================================================================
@@ -5071,24 +5070,24 @@ const SKILLS = [
    Para agregar: definir aquí + implementar lógica en execAttack/endTurn/applyDotEffects. */
 const PASSIVES = [
   {id:'none',        name:'Sin pasiva',         desc:'—',                                                                  short:'—'},
-  {id:'thorns',      name:'🌵 Espinas',          desc:'Devuelve 12 de daño al atacante cada vez que recibís daño',          short:'Devuelve 12 daño'},
-  {id:'laststand',   name:'💢 Último Aliento',   desc:'Cuando llegás a 30% de HP o menos, tu ATK sube un 30%',            short:'ATK+30% (<30%HP)'},
-  {id:'ironhide',    name:'🦏 Piel de Hierro',   desc:'Todos los ataques que recibes se reducen en 10 (mínimo 1)',          short:'Absorbe 10 daño'},
-  {id:'lifesteal',   name:'🩸 Robo de Vida',     desc:'Cada ataque que hacés te cura el 20% del daño infligido',          short:'Cura 20% del daño'},
+  {id:'thorns',      name:'🌵 Espinas',          desc:'Devuelve el 25% del daño recibido al atacante (máx 8)',          short:'Devuelve 12 daño'},
+  {id:'laststand',   name:'💢 Último Aliento',   desc:'Cuando llegás a 30% de HP o menos, tu ATK sube un 20%',            short:'ATK+30% (<30%HP)'},
+  {id:'ironhide',    name:'🦏 Piel de Hierro',   desc:'Todos los ataques que recibes se reducen en 5 (mínimo 1)',          short:'Absorbe 10 daño'},
+  {id:'lifesteal',   name:'🩸 Robo de Vida',     desc:'Cada ataque que hacés te cura el 20% del daño infligido (máx 12 HP por golpe)',          short:'Cura 20% del daño'},
   {id:'momentum',    name:'⚡ Ímpetu',            desc:'Cada ataque consecutivo sin recibir daño suma +5 extra (máx +20)', short:'Racha: +5/atk'},
   {id:'resilience',  name:'🔄 Resiliencia',      desc:'Al inicio de tu turno, si tenés <50% HP, regenerás 5 HP',          short:'Regen 5HP (<50%HP)'},
   {id:'venomous',    name:'☠️ Venenoso',          desc:'Cada ataque que hacés envenena al rival por 2 turnos (3 daño/t)', short:'Veneno 2t en atq'},
-  {id:'berserker',   name:'🪓 Berserker',         desc:'Cuanto menos HP tenés, más daño hacés (+1% ATK por cada 1% HP perdido)', short:'ATK↑ con daño'},
+  {id:'berserker',   name:'🪓 Berserker',         desc:'Cuanto menos HP tenés, más daño hacés (+0,35% de daño por cada 1% de HP perdido, máx +35%)', short:'ATK↑ con daño'},
   {id:'spellshield', name:'🔮 Escudo Mágico',    desc:'La primera habilidad que te usen cada turno no tiene efecto',      short:'Bloquea 1 hab./turno'},
-  {id:'rebirth',     name:'✨ Renacimiento',      desc:'Una sola vez en la batalla, al morir, volvés con 30% de HP',       short:'Revive 1 vez (30%)'},
-  {id:'rebirth2',    name:'✨✨ Renacimiento II',   desc:'Revivís hasta 2 veces en la batalla, al morir, volvés con 30% de HP cada vez', short:'Revive 2 veces (30%)'},
-  {id:'rebirth3',    name:'✨✨✨ Renacimiento III', desc:'Revivís hasta 3 veces en la batalla, al morir, volvés con 30% de HP cada vez', short:'Revive 3 veces (30%)'},
+  {id:'rebirth',     name:'✨ Renacimiento',      desc:'Una sola vez en la batalla, al morir, volvés con 25% de HP',       short:'Revive 1 vez (30%)'},
+  {id:'rebirth2',    name:'✨✨ Renacimiento II',   desc:'Revivís hasta 2 veces en la batalla, al morir, volvés con 25% de HP cada vez', short:'Revive 2 veces (30%)'},
+  {id:'rebirth3',    name:'✨✨✨ Renacimiento III', desc:'Revivís hasta 3 veces en la batalla, al morir, volvés con 25% de HP cada vez', short:'Revive 3 veces (30%)'},
   {id:'energize',    name:'⚡ Energizar',         desc:'Al inicio de tu turno, si tu carta no usó ninguna habilidad el turno anterior, ganás 1 PA extra', short:'+1 PA (sin hab. prev.)'},
   {id:'counter',     name:'🔁 Contraataque',     desc:'Cuando fallás un ataque (dado=1), hacés 10 de daño igualmente',   short:'Fallo→10 daño'},
-  {id:'bulwark',     name:'🏰 Baluarte',          desc:'Reducís todo el daño recibido a la mitad si tenés 70% de HP o más',short:'50% daño (>70%HP)'},
+  {id:'bulwark',     name:'🏰 Baluarte',          desc:'Reducís un 30% el daño recibido si tenés 70% de HP o más',short:'50% daño (>70%HP)'},
   {id:'vampiric',    name:'🧛 Vampírico',         desc:'Si eliminás una carta rival, recuperás 40 HP',                    short:'Cura 40HP al matar'},
   {id:'swift',       name:'💨 Veloz',             desc:'Atacar cuesta 0 PA en lugar de 1 (pero solo podés atacar 2 veces por turno)', short:'Atk gratis (máx 2/t)'},
-  {id:'spiked',      name:'🦔 Acorazado',         desc:'Escudos y barreras activas te dan +10% de ATK mientras duran',   short:'ATK+10% con escudo'},
+  {id:'spiked',      name:'🦔 Acorazado',         desc:'Escudos y barreras activas te dan +5% de ATK mientras duran',   short:'ATK+10% con escudo'},
   {id:'volatile',    name:'💣 Volátil',           desc:'Tus ataques tienen más varianza: el dado suma +2 al resultado (máx 6)', short:'Dado+2 (sin pasar de 6)'},
   {id:'transform',   name:'🐛 Transformación',    desc:'Al morir, desplega automáticamente una carta de relevo que elegís al crear (seleccionar carta relevo en editor)', short:'Relevo al morir'},
   {id:'guardian',    name:'🛡️ Guardián',          desc:'Cuando tu carta muere, la carta siguiente entra con HP adicionales permanentes (configurable, default +20)', short:'HP extra a la siguiente'},
@@ -6381,7 +6380,7 @@ function openEditor(idx) {
   // No tocar display — lo gestiona nav() al final de esta función
 
   const isNew = idx === -1;
-  const c = isNew ? {name:'',hp:150,atk:30,skill:'none',skillPa:2,img:null} : DB[_activeDbKey()][idx];
+  const c = isNew ? {name:'',hp:70,atk:20,skill:'none',skillPa:2,img:null} : DB[_activeDbKey()][idx];
   const sectionLabel = activeTab === 3 ? ' (IA)' : activeTab === 2 ? ' (J2)' : ' (J1)';
   document.getElementById('editor-title').textContent = (isNew ? 'NUEVA CARTA' : 'EDITAR CARTA') + sectionLabel;
   document.getElementById('inp-name').value  = c.name || '';
@@ -6973,16 +6972,16 @@ function getEditorPool() {
 // Alias estático que se mantiene por compatibilidad con código existente fuera del editor
 const STAT_POOL = STAT_POOL_BASE;
 
-function calcHpMax(atk) { return Math.min(STAT_MAX, getEditorPool() - Math.max(ATK_MIN, atk)); }
-function calcAtkMax(hp)  { return Math.min(ATK_MAX, getEditorPool() - Math.max(HP_MIN, hp)); }
+function calcHpMax(atk) { return Math.min(STAT_MAX, getEditorPool() - Math.max(5, atk)); }
+function calcAtkMax(hp)  { return Math.min(STAT_MAX, getEditorPool() - Math.max(20, hp)); }
 
 function syncSliders(hp, atk) {
   const pool    = getEditorPool();
-  const maxHpV  = Math.min(STAT_MAX, pool - ATK_MIN);
-  const maxAtkV = Math.min(ATK_MAX, pool - HP_MIN);
-  hp  = Math.max(HP_MIN,  Math.min(maxHpV,  Math.round(+hp  || HP_MIN)));
-  atk = Math.max(ATK_MIN, Math.min(maxAtkV, Math.round(+atk || ATK_MIN)));
-  if (hp + atk > pool) { atk = Math.max(ATK_MIN, pool - hp); }
+  const maxHpV  = Math.min(STAT_MAX, pool - 5);
+  const maxAtkV = Math.min(STAT_MAX, pool - 20);
+  hp  = Math.max(20, Math.min(maxHpV,  hp));
+  atk = Math.max(5,  Math.min(maxAtkV, atk));
+  if (hp + atk > pool) { atk = Math.max(5, pool - hp); }
   const hpS  = document.getElementById('inp-hp');
   const atkS = document.getElementById('inp-atk');
   hpS.value  = hp;  hpS.max  = maxHpV;
@@ -6993,13 +6992,13 @@ function syncSliders(hp, atk) {
   document.getElementById('atk-rem').textContent = calcHpMax(atk);
 }
 function onHp(val) {
-  val = Math.max(HP_MIN, Math.min(STAT_MAX, +val || HP_MIN));
+  val = Math.max(20, Math.min(STAT_MAX, val));
   // Si la suma supera el pool, recortamos ATK
   const atkEl  = document.getElementById('inp-atk');
   let   curAtk = +atkEl.value;
   const atkMax = calcAtkMax(val);
   if (curAtk > atkMax) {
-    curAtk = Math.max(ATK_MIN, atkMax);
+    curAtk = Math.max(5, atkMax);
     atkEl.value = curAtk;
     document.getElementById('atk-lbl').textContent = curAtk;
   }
@@ -7009,12 +7008,12 @@ function onHp(val) {
   refreshPreview();
 }
 function onAtk(val) {
-  val = Math.max(ATK_MIN, Math.min(ATK_MAX, +val || ATK_MIN));
+  val = Math.max(5, Math.min(STAT_MAX, val));
   const hpEl  = document.getElementById('inp-hp');
   let   curHp = +hpEl.value;
   const hpMax = calcHpMax(val);
   if (curHp > hpMax) {
-    curHp = Math.max(HP_MIN, hpMax);
+    curHp = Math.max(20, hpMax);
     hpEl.value = curHp;
     document.getElementById('hp-lbl').textContent = curHp;
   }
@@ -8211,7 +8210,7 @@ function shuffle(arr) {
 
 let _bidCounter = 0;
 function cloneCard(c) {
-  const cl = (typeof kartNormalizeCard==='function') ? kartNormalizeCard(JSON.parse(JSON.stringify(c))) : JSON.parse(JSON.stringify(c));
+  const cl = JSON.parse(JSON.stringify(c));
   cl.curHp = cl.hp;
   cl.shield = false; cl.shieldDice = 0; cl.buff = false;
   cl.stun = false; cl.barrier = 0;
@@ -8702,7 +8701,7 @@ function _checkRebirth(card, logNameFn, floatKeyFn) {
   if(card._rebirthCount===undefined) card._rebirthCount=0;
   if(card._rebirthCount>=maxRevives) return false;
   card._rebirthCount++;
-  const reviveHp=Math.max(1,Math.floor(card.hp*0.30));
+  const reviveHp=Math.max(1,Math.floor(card.hp*0.25));
   card.curHp=reviveHp;
   card.fire=0; card.poison=0; card.stun=false; card.frozen=false; card.bleed=0;
   card.sacRegen=0; card.regen=0; card.shield=false; card.shieldDice=0; card.barrier=0;
@@ -8809,11 +8808,11 @@ function doCharge() {
     toast('☠️ PESADILLA: ¡La carga está desactivada!',2500); return;
   }
 
-  // BALANCE v2: "Cargar" = pasar conservando PA (ya no da +4 ni regala PA al rival ni vacía la reserva)
-  const _noSk=!cur().usedSkill&&!(cur().field&&cur().field.usedSkill2);
-  if(_noSk) addBonus(G.turn,1);
-  addLog(`⚡ ${cur().name} carga: conserva sus PA${_noSk?' (+1 PA el próximo turno)':''}`,'sys');
-  floatDmg(G.turn,_noSk?'⚡+1':'⚡','heal');
+  addBonus(G.turn, 4);
+  addBonus(oppKey(), 1);
+  addLog(`⚡ ${cur().name} carga — +4 PA acum., rival +1 PA acum.`,'sys');
+  floatDmg(G.turn,'⚡+4','heal');
+  cur().pa=0;
   if(onlineActive) setTimeout(()=>_onlineSyncAfterAction('CHARGE'), 80);
   endTurn();
 }
@@ -8825,8 +8824,6 @@ function doPass() {
   if(!G||G.locked||G.deploying) return;
   if(onlineActive && G.turn!==onlineMyPk) return;
   addLog(`➡️ ${cur().name} pasa el turno`,'sys');
-  // BALANCE v2: pasar sin usar habilidades da +1 PA (una sola vez; se consume en endTurn vía paBonus, que ya se sincroniza)
-  if(!cur().usedSkill&&!(cur().field&&cur().field.usedSkill2)) addBonus(G.turn,1);
   if(onlineActive) setTimeout(()=>_onlineSyncAfterAction('PASS'), 80);
   endTurn();
 }
@@ -8988,7 +8985,7 @@ function deployFromHand(pk,i){
 /* ================================================================
    EJECUCIÓN DE ATAQUE
 ================================================================ */
-function execAttack(roll, isChained, done, bonusAtk) {
+function execAttack(roll, isChained, done, bonusAtk, hitMul) {
   bonusAtk = bonusAtk||0;
   if(!G){ done&&done(); return; }
   const attacker = cur().field;
@@ -9034,10 +9031,10 @@ function execAttack(roll, isChained, done, bonusAtk) {
   // Pasivas de ataque
   if(attacker.passive==='berserker'){
     const lost=1-(attacker.curHp/attacker.hp);
-    dmg=Math.floor(dmg*(1+lost));
+    dmg=Math.floor(dmg*(1+0.35*lost));
   }
-  if(attacker.passive==='laststand' && attacker.curHp/attacker.hp<=0.3) dmg=Math.floor(dmg*1.3);
-  if(attacker.passive==='spiked' && (attacker.shield||attacker.barrier>0||attacker.shieldDice>0)) dmg=Math.floor(dmg*1.1);
+  if(attacker.passive==='laststand' && attacker.curHp/attacker.hp<=0.3) dmg=Math.floor(dmg*1.2);
+  if(attacker.passive==='spiked' && (attacker.shield||attacker.barrier>0||attacker.shieldDice>0)) dmg=Math.floor(dmg*1.05);
   if(attacker.passive==='momentum'){
     attacker._momentum=(attacker._momentum||0)+1;
     dmg+=Math.min(20,(attacker._momentum-1)*5);
@@ -9055,10 +9052,10 @@ function execAttack(roll, isChained, done, bonusAtk) {
     else if(roll===5) dmg=Math.floor(dmg*1.05);
     else if(roll===6) dmg=Math.floor(dmg*1.10);
   }
-  if(attacker.buff){ dmg+=20; attacker.buff=false; }
-  if(attacker.sacrifice){ dmg=Math.floor(dmg*1.6); attacker.sacrifice=false; addLog(`🩸 ¡Golpe de sacrificio! (+60%)`,'crit'); }
+  if(attacker.buff){ dmg=Math.floor(dmg*1.25); attacker.buff=false; }
+  if(attacker.sacrifice){ dmg=Math.floor(dmg*1.35); attacker.sacrifice=false; addLog(`🩸 ¡Golpe de sacrificio! (+35%)`,'crit'); }
   if(attacker._jokerDouble){ dmg=dmg*2; attacker._jokerDouble=false; addLog(`✖️ ¡Golpe doble del Comodín! Daño ×2`,'crit'); floatDmg(G.turn,'✖️×2','crit'); }
-  dmg+=bonusAtk;
+  dmg=Math.floor(dmg*(hitMul||1))+bonusAtk;
   const isCrit=roll===6;
   if(isCrit) dmg+=10;
 
@@ -9066,12 +9063,12 @@ function execAttack(roll, isChained, done, bonusAtk) {
   if(isVampStrike) attacker._vampStrikeNext=false;
 
   // Defensas del rival
-  if(defender.passive==='bulwark' && defender.curHp/defender.hp>=0.7) dmg=Math.max(1,Math.floor(dmg/2));
-  if(defender.passive==='ironhide') dmg=Math.max(1,dmg-10);
-  if(attacker._armorBroken){ dmg=Math.max(1,Math.floor(dmg*0.4)); attacker._armorBroken=false; addLog(`⚒️ Armadura rota: ${attacker.name} hace 60% menos daño`,'sys'); }
+  if(defender.passive==='bulwark' && defender.curHp/defender.hp>=0.7) dmg=Math.max(1,Math.floor(dmg*0.7));
+  if(defender.passive==='ironhide') dmg=Math.max(1,dmg-5);
+  if(attacker._armorBroken){ dmg=Math.max(1,Math.floor(dmg*0.6)); attacker._armorBroken=false; addLog(`⚒️ Armadura rota: ${attacker.name} hace 40% menos daño`,'sys'); }
 
   if(defender.shield){
-    dmg=Math.floor(dmg/2); defender.shield=false;
+    dmg=dmg-Math.min(60,Math.ceil(dmg/2)); defender.shield=false;
     addLog(`🛡️ Escudo — daño reducido a ${dmg}`,'sys');
   } else if(defender.barrier>0){
     const abs=Math.min(defender.barrier,dmg); defender.barrier-=abs; dmg-=abs;
@@ -9094,6 +9091,7 @@ function execAttack(roll, isChained, done, bonusAtk) {
   }
   if(dmg>0) dmg=_pcDefend(defender,dmg);   // defensa por PC sin usar
   if(dmg<1) dmg=1;
+  dmg=_capHit(attacker,defender,dmg);
 
   defender.curHp=Math.max(0,defender.curHp-dmg);
   playHitSound(attacker);
@@ -9107,10 +9105,10 @@ function execAttack(roll, isChained, done, bonusAtk) {
   }
 
   // Pasivas post-golpe
-  if(defender.passive==='thorns' && dmg>0){ attacker.curHp=Math.max(0,attacker.curHp-12); floatDmg(G.turn,`🌵-12`,'dmg'); addLog(`🌵 Espinas: -12 HP a ${attacker.name}`,'dmg'); if(attacker._momentum) attacker._momentum=0; }
+  if(defender.passive==='thorns' && dmg>0){ const _th=Math.min(8,Math.max(1,Math.floor(dmg*0.25))); attacker.curHp=Math.max(0,attacker.curHp-_th); floatDmg(G.turn,`🌵-${_th}`,'dmg'); addLog(`🌵 Espinas: -${_th} HP a ${attacker.name}`,'dmg'); if(attacker._momentum) attacker._momentum=0; }
   if(attacker.passive==='venomous' && dmg>0){ defender.poison=Math.min(3,Math.max(defender.poison||0,2)); addLog(`☠️ ${attacker.name} (Venenoso) envenena a ${defender.name}`,'dmg'); }
-  if(attacker.passive==='lifesteal' && dmg>0){ const ls=Math.max(1,Math.floor(dmg*0.2)); attacker.curHp=Math.min(attacker.hp,attacker.curHp+ls); floatDmg(G.turn,`🩸+${ls}`,'heal'); }
-  if(isVampStrike && dmg>0){ attacker.curHp=Math.min(attacker.hp,attacker.curHp+dmg); floatDmg(G.turn,`🧛+${dmg}`,'heal'); playHealSound(); addLog(`🧛 ¡Golpe Vampiro! ${attacker.name} absorbe ${dmg} HP`,'heal'); }
+  if(attacker.passive==='lifesteal' && dmg>0){ const ls=Math.min(12,Math.max(1,Math.floor(dmg*0.2))); attacker.curHp=Math.min(attacker.hp,attacker.curHp+ls); floatDmg(G.turn,`🩸+${ls}`,'heal'); }
+  if(isVampStrike && dmg>0){ const _vh=Math.min(25,Math.max(1,Math.floor(dmg*0.4))); attacker.curHp=Math.min(attacker.hp,attacker.curHp+_vh); floatDmg(G.turn,`🧛+${_vh}`,'heal'); playHealSound(); addLog(`🧛 ¡Golpe Vampiro! ${attacker.name} absorbe ${_vh} HP`,'heal'); }
   // Resetear momentum del defensor al recibir daño
   if(dmg>0 && defender._momentum) defender._momentum=0;
 
@@ -9278,13 +9276,13 @@ function _executeSkill(skill, slot) {
 
   // ── Skills sin dado ──
   if(skill.id==='heal'){
-    const amt=slot===2?(f.healAmount2||30):(f.healAmount||30);
+    const amt=Math.min(50,Math.floor(f.hp*0.12));
     f.curHp=Math.min(f.hp,f.curHp+amt);
     playHealSound(); floatDmg(pk,`+${amt}💚`,'heal');
     addLog(`💚 ${f.name} usa Curación — +${amt} HP`,'heal');
 
   } else if(skill.id==='regen'){
-    const amt=slot===2?(f.regenAmount2||18):(f.regenAmount||18);
+    const amt=Math.min(20,Math.max(1,Math.floor(f.hp*0.04)));
     f.regen=3; f._regenPerTurn=amt;
     playHealSound(); floatDmg(pk,`🌿Regen×3`,'heal');
     addLog(`🌿 ${f.name} activa Regeneración — ${amt} HP × 3 turnos`,'heal');
@@ -9295,15 +9293,15 @@ function _executeSkill(skill, slot) {
     addLog(`🛡️ ${f.name} activa Escudo — próximo golpe -50%`,'heal');
 
   } else if(skill.id==='barrier'){
-    const amt=60;
-    f.barrier=(f.barrier||0)+amt;
+    const amt=50;
+    f.barrier=amt; f._barrierT=2;
     floatDmg(pk,`🔵+${amt}`,'heal');
     addLog(`🔵 ${f.name} activa Barrera — +${amt} de absorción`,'heal');
 
   } else if(skill.id==='buff'){
     f.buff=true;
     floatDmg(pk,'💪 FURIA','heal');
-    addLog(`💪 ${f.name} activa Furia — próximo ataque +20 daño`,'crit');
+    addLog(`💪 ${f.name} activa Furia — próximo ataque +25% daño`,'crit');
 
   } else if(skill.id==='stun'){
     if(of_){ of_.stun=true; floatDmg(oppKey(),'⚡ ATURDIDO','dmg'); addLog(`⚡ ${f.name} aturde a ${of_.name} — pierde 3 PA el próximo turno`,'sys'); }
@@ -9316,17 +9314,17 @@ function _executeSkill(skill, slot) {
 
   } else if(skill.id==='pasurge'){
     const surgeAmt=slot===2?(f.pasurgeAmount2!==undefined?f.pasurgeAmount2:2):(f.pasurgeAmount!==undefined?f.pasurgeAmount:2);
-    const gained=Math.min(surgeAmt,PA_MAX-cur().pa);
+    const gained=Math.min(surgeAmt,5,PA_MAX-cur().pa);
     cur().pa+=gained; f._surgePenalty=true;
     floatDmg(pk,`+${gained}⚡`,'heal');
     addLog(`⚡ ${f.name} usa PA Surge — +${gained} PA ⚠️ (próximo golpe +50% daño)`,'sys');
 
   } else if(skill.id==='sacrifice'){
-    const lost=Math.max(1,Math.floor(f.curHp*0.4));
+    const lost=Math.max(1,Math.floor(f.curHp*0.25));
     f.curHp=Math.max(1,f.curHp-lost);
     f.sacrifice=true; f.sacRegen=3;
     playHitSound(); floatDmg(pk,`-${lost}🩸`,'dmg');
-    addLog(`🩸 ${f.name}: -${lost} HP (40%), próximo golpe +60%, Regen 6HP×3`,'crit');
+    addLog(`🩸 ${f.name}: -${lost} HP (25%), próximo golpe +35%, Regen 4HP×3`,'crit');
 
   } else if(skill.id==='vampstrike'){
     f._vampStrikeNext=true;
@@ -9343,17 +9341,17 @@ function _executeSkill(skill, slot) {
       floatDmg(oppKey(),'⚒️ ARMADURA ROTA','dmg'); }
 
   } else if(skill.id==='rally'){
-    const healR=Math.floor(f.hp*0.30);
+    const healR=Math.min(50,Math.floor(f.hp*0.15));
     f.curHp=Math.min(f.hp,f.curHp+healR);
     cur().pa=Math.min(PA_MAX,cur().pa+1);
     playHealSound(); floatDmg(pk,`+${healR}HP+1PA`,'heal');
-    addLog(`📣 ${f.name} se refortalece: +${healR} HP (30%) y +1 PA`,'heal');
+    addLog(`📣 ${f.name} se refortalece: +${healR} HP (15%) y +1 PA`,'heal');
 
   } else if(skill.id==='cut'){
     if(of_){
-      const pct=slot===2?(f.cutAmount2||10):(f.cutAmount||10);
-      const baseHp=of_.curHp;
-      of_.bleed=(of_.bleed||0)+3;
+      const pct=2;
+      const baseHp=of_.hp;
+      of_.bleed=3;
       of_._bleedBaseHp=baseHp;
       of_._bleedPct=pct;
       floatDmg(oppKey(),`✂️ SANGRADO`,'dmg');
@@ -9365,7 +9363,7 @@ function _executeSkill(skill, slot) {
 
   // ── Skills con dado ──
   } else if(skill.id==='fire'){
-    const amt=slot===2?(f.fireAmount2||20):(f.fireAmount||20);
+    const amt=Math.max(4,Math.round((of_?of_.hp:100)*0.03));
     G.locked=true;
     addLog(`🔥 ${f.name} prepara Fuego...`,'sys');
     renderBattle();
@@ -9373,8 +9371,8 @@ function _executeSkill(skill, slot) {
       if(of_){
         if(roll===1){ addLog(`🎲 1 — ¡Fuego falla!`,'miss'); floatDmg(oppKey(),'FALLA','miss'); }
         else {
-          const turns=roll>=5?4:roll>=3?3:2;
-          of_.fire=Math.min(4,(of_.fire||0)+turns); of_._firePerTurn=amt;
+          const turns=3;
+          of_.fire=turns; of_._firePerTurn=amt;
           const dmg0=_pcDefend(of_,Math.floor(amt*(roll===6?1.5:roll===2?0.5:1)));
           of_.curHp=Math.max(0,of_.curHp-dmg0);
           floatDmg(oppKey(),`🔥-${dmg0}`,'crit');
@@ -9399,8 +9397,8 @@ function _executeSkill(skill, slot) {
     renderBattle();
     rollDiceShield(roll=>{
       try {
-        const shield=roll*3;
-        f.shieldDice=(f.shieldDice||0)+shield;
+        const shield=Math.min(18,roll*3);
+        f.shieldDice=Math.min(18,(f.shieldDice||0)+shield);
         floatDmg(pk,`🛡️+${shield}`,'heal');
         addLog(`🎲 ${roll} → Escudo Dado: +${shield} de escudo absorbente (acum: ${f.shieldDice})`,'heal');
       } catch(e) { console.error('[shielddice]',e); }
@@ -9411,7 +9409,7 @@ function _executeSkill(skill, slot) {
 
   } else if(skill.id==='explosion'){
     const expBonus=slot===2?(f.explosionAmount2||0):(f.explosionAmount||0);
-    const expDmg=_pcDefend(of_,(f.curHp||0)+(f.atk||0)+expBonus);
+    const expDmg=_capHit(f,of_,_pcDefend(of_,(f.curHp||0)+(f.atk||0)+expBonus),0.35);
     addLog(`💥 ¡${f.name} EXPLOTA! Hace ${expDmg} de daño y muere`,'crit');
     floatDmg(pk,'💥 BOOM!','crit');
     if(of_){
@@ -9455,7 +9453,7 @@ function _executeSkill(skill, slot) {
 
   } else if(skill.id==='lastcard'){
     const lcBonus=slot===2?(f.lastcardAmount2??20):(f.lastcardAmount??20);
-    const lastDmg=f.curHp||0;
+    const lastDmg=_capHit(f,of_,f.curHp||0,0.35);
     addLog(`💀 ${f.name} se sacrifica — hace ${lastDmg} daño y la siguiente carta gana +${lcBonus} ATK y +2 PA!`,'crit');
     floatDmg(pk,'💀 SACRIFICIO','dmg');
     if(of_&&lastDmg>0){
@@ -9513,10 +9511,10 @@ function _executeSkill(skill, slot) {
     rollDiceMulti(2, ([r1,r2])=>{
       try{ execAttack(r1,true,()=>{
         if(!opp().field){ G.locked=false; renderBattle(); return; }
-        setTimeout(()=>{ addLog(`⚔️ Segundo golpe (+8)...`,'sys');
-          try{ execAttack(r2,true,()=>{ G.locked=false; renderBattle(); },8); }catch(e){ G.locked=false; renderBattle(); }
+        setTimeout(()=>{ addLog(`⚔️ Segundo golpe (55% del daño)...`,'sys');
+          try{ execAttack(r2,true,()=>{ G.locked=false; renderBattle(); },null,0.55); }catch(e){ G.locked=false; renderBattle(); }
         },300);
-      }); }catch(e){ G.locked=false; renderBattle(); }
+      },null,0.55); }catch(e){ G.locked=false; renderBattle(); }
     });
     return;
 
@@ -9527,15 +9525,15 @@ function _executeSkill(skill, slot) {
     rollDiceMulti(3, ([r1,r2,r3])=>{
       try{ execAttack(r1,true,()=>{
         if(!opp().field){ G.locked=false; renderBattle(); return; }
-        setTimeout(()=>{ addLog(`⚔️⚔️ Segundo golpe (+12)...`,'sys');
+        setTimeout(()=>{ addLog(`⚔️⚔️ Segundo golpe (40% del daño)...`,'sys');
           try{ execAttack(r2,true,()=>{
             if(!opp().field){ G.locked=false; renderBattle(); return; }
-            setTimeout(()=>{ addLog(`⚔️⚔️⚔️ Tercer golpe (+30)...`,'sys');
-              try{ execAttack(r3,true,()=>{ G.locked=false; renderBattle(); },30); }catch(e){ G.locked=false; renderBattle(); }
+            setTimeout(()=>{ addLog(`⚔️⚔️⚔️ Tercer golpe (40% del daño)...`,'sys');
+              try{ execAttack(r3,true,()=>{ G.locked=false; renderBattle(); },null,0.40); }catch(e){ G.locked=false; renderBattle(); }
             },300);
-          },null,12); }catch(e){ G.locked=false; renderBattle(); }
+          },null,0.40); }catch(e){ G.locked=false; renderBattle(); }
         },300);
-      },null,12); }catch(e){ G.locked=false; renderBattle(); }
+      },null,0.40); }catch(e){ G.locked=false; renderBattle(); }
     });
     return;
 
@@ -9546,20 +9544,20 @@ function _executeSkill(skill, slot) {
     rollDiceMulti(4, ([r1,r2,r3,r4])=>{
       try{ execAttack(r1,true,()=>{
         if(!opp().field){ G.locked=false; renderBattle(); return; }
-        setTimeout(()=>{ addLog(`⚔️×2 Segundo golpe (+10)...`,'sys');
+        setTimeout(()=>{ addLog(`⚔️×2 Segundo golpe (30% del daño)...`,'sys');
           try{ execAttack(r2,true,()=>{
             if(!opp().field){ G.locked=false; renderBattle(); return; }
-            setTimeout(()=>{ addLog(`⚔️×3 Tercer golpe (+10)...`,'sys');
+            setTimeout(()=>{ addLog(`⚔️×3 Tercer golpe (30% del daño)...`,'sys');
               try{ execAttack(r3,true,()=>{
                 if(!opp().field){ G.locked=false; renderBattle(); return; }
-                setTimeout(()=>{ addLog(`💥 ¡Cuarto golpe! (+25 EXTRA — golpe final)...`,'crit');
-                  try{ execAttack(r4,true,()=>{ G.locked=false; renderBattle(); },25); }catch(e){ G.locked=false; renderBattle(); }
+                setTimeout(()=>{ addLog(`💥 ¡Cuarto golpe! (30% del daño)...`,'crit');
+                  try{ execAttack(r4,true,()=>{ G.locked=false; renderBattle(); },null,0.30); }catch(e){ G.locked=false; renderBattle(); }
                 },300);
-              },null,10); }catch(e){ G.locked=false; renderBattle(); }
+              },null,0.30); }catch(e){ G.locked=false; renderBattle(); }
             },300);
-          },null,10); }catch(e){ G.locked=false; renderBattle(); }
+          },null,0.30); }catch(e){ G.locked=false; renderBattle(); }
         },300);
-      },null,10); }catch(e){ G.locked=false; renderBattle(); }
+      },null,0.30); }catch(e){ G.locked=false; renderBattle(); }
     });
     return;
   }
@@ -9583,8 +9581,9 @@ function applyDotEffects(pk) {
     return true;
   }
   let tookDot=false;
+  let _bud=Math.max(1,Math.floor(f.hp*0.08)); // tope común de estados por turno (8% HP máx)
   if(f.fire>0){
-    const dmg=f._firePerTurn||20; f.curHp=Math.max(0,f.curHp-dmg); f.fire--;
+    const dmg=Math.min(f._firePerTurn||20,_bud); _bud-=dmg; f.curHp=Math.max(0,f.curHp-dmg); f.fire--;
     tookDot=true;
     floatDmg(pk,`-${dmg}🔥`,'crit');
     addLog(`🔥 ${f.name} quemado: -${dmg} HP (${f.fire} turnos restantes)`,'dmg');
@@ -9593,7 +9592,7 @@ function applyDotEffects(pk) {
   if(f.poison>0){
     // Rebalance 10/10: escala creciente 12→20→30 (antes 10→15→20).
     // stage avanza 1,2,3 según pasan los turnos (f.poison baja 3→2→1).
-    const stage=4-f.poison; const dmg=[0,12,20,30][stage]||((stage+1)*5);
+    const stage=4-f.poison; const dmg=Math.min(Math.max(1,Math.round(f.hp*([0,0.015,0.02,0.03][stage]||0.03))),_bud); _bud-=dmg;
     f.curHp=Math.max(0,f.curHp-dmg); f.poison--;
     tookDot=true;
     floatDmg(pk,`-${dmg}☠️`,'dmg');
@@ -9611,7 +9610,7 @@ function applyDotEffects(pk) {
   if(f.bleed>0){
     const bleedHp=f._bleedBaseHp||f.hp;
     const bleedPct=f._bleedPct||10;
-    const dmg=Math.max(1,Math.round(bleedHp*bleedPct/100));
+    const dmg=Math.min(Math.max(1,Math.round(bleedHp*bleedPct/100)),_bud); _bud-=dmg;
     f.curHp=Math.max(0,f.curHp-dmg); f.bleed--;
     tookDot=true;
     floatDmg(pk,`-${dmg}🩸`,'crit');
@@ -9621,7 +9620,7 @@ function applyDotEffects(pk) {
   if(f.sacRegen>0){
     if(G.nightmareMode&&pk===G.humanPk){ f.sacRegen=0; }
     else {
-      const h=Math.min(6,f.hp-f.curHp); f.curHp=Math.min(f.hp,f.curHp+6); f.sacRegen--;
+      const h=Math.min(4,f.hp-f.curHp); f.curHp=Math.min(f.hp,f.curHp+4); f.sacRegen--;
       if(h>0){ playHealSound(); floatDmg(pk,`+${h}💉`,'heal'); addLog(`💉 ${f.name} recupera: +${h} HP (${f.sacRegen} restantes)`,'heal'); }
     }
   }
@@ -9658,12 +9657,15 @@ function killByDot(pk,f,cause){
 function endTurn() {
   if(!G) return;
   const nk=oppKey(), next=G[nk];
+  const _kNoSkill=!next.usedSkill&&!(next.field&&next.field.usedSkill2);
+  next._kT=(next._kT||0)+1;
+  if(next.field&&next.field._barrierT>0){ next.field._barrierT--; if(next.field._barrierT<=0&&next.field.barrier>0){ next.field.barrier=0; addLog(`🔵 La barrera de ${next.field.name} se disipó`,'sys'); } }
   next.usedSkill=false;
   if(next.field) next.field.usedSkill2=false;
 
   const bonus=next.paBonus||0;
-  let pa=(next.pa||0)+PA_REGEN+bonus;   // reserva del jugador + regen (único punto de recuperación)
-  if(next.field&&next.field.stun){ pa=Math.max(1,pa-3); next.field.stun=false; addLog(`⚡ ${next.field.name} aturdido: -3 PA este turno`,'sys'); }
+  let pa=(next._kT===1)?((next.pa||PA_BASE)+bonus):((next.pa||0)+2+(_kNoSkill?1:0)+bonus);
+  if(next.field&&next.field.stun){ pa=Math.max(1,pa-2); next.field.stun=false; addLog(`⚡ ${next.field.name} aturdido: -2 PA este turno`,'sys'); }
   if(next.field&&next.field._nextTurnPaBonus){ pa+=next.field._nextTurnPaBonus; next.field._nextTurnPaBonus=0; }
   const startBonus=(onlineActive?(G.startPaBonus||0):getStartPaBonus());
   if(startBonus>0){ pa=Math.min(PA_MAX,pa+startBonus); if(!G.startPaBonus) G.startPaBonus=startBonus; }
@@ -9673,7 +9675,7 @@ function endTurn() {
   const bonusLog=[];
   if(bonus>0) bonusLog.push(`+${bonus} acum.`);
   if(startBonus>0) bonusLog.push(`+${startBonus}⚡ ítem`);
-  if(bonusLog.length) addLog(`▶️ ${next.name} — ${next.pa} PA (+${PA_REGEN} turno · ${bonusLog.join(' · ')})`,'sys');
+  if(bonusLog.length) addLog(`▶️ ${next.name} — ${next.pa} PA (${PA_BASE} base · ${bonusLog.join(' · ')})`,'sys');
   else addLog(`▶️ ${next.name} — ${next.pa} PA`,'sys');
 
   G.turn=nk; G.turnNum++;
@@ -9694,7 +9696,7 @@ function endTurn() {
       if(rh>0){ playHealSound(); floatDmg(nk,`🔄+${rh}`,'heal'); addLog(`🔄 ${next.field.name} (Resiliencia): +${rh} HP al inicio del turno`,'heal'); }
     }
   }
-  if(next.field&&next.field.passive==='energize'&&!next.usedSkill&&next.pa<PA_MAX){
+  if(next.field&&next.field.passive==='energize'&&_kNoSkill&&next.pa<PA_MAX){
     next.pa=Math.min(PA_MAX,next.pa+1);
     addLog(`⚡ ${next.field.name} (Energizar): +1 PA extra (no usó habilidad)`,'sys');
   }
@@ -9709,14 +9711,14 @@ function endTurn() {
       if(bl.field) bl.field.usedSkill2=false;
       const bb=bl.paBonus||0;
       const skipSB=(onlineActive?(G.startPaBonus||0):getStartPaBonus());
-      let skipPa=Math.max(1,(bl.pa||0)+PA_REGEN+bb+skipSB);
-      if(bl.field&&bl.field.stun){ skipPa=Math.max(1,skipPa-3); bl.field.stun=false; addLog(`⚡ ${bl.field.name} aturdido: -3 PA este turno`,'sys'); }
+      let skipPa=Math.max(1,(bl.pa||0)+2+bb+skipSB);
+      if(bl.field&&bl.field.stun){ skipPa=Math.max(1,skipPa-2); bl.field.stun=false; addLog(`⚡ ${bl.field.name} aturdido: -2 PA este turno`,'sys'); }
       if(bl.field&&bl.field._nextTurnPaBonus){ skipPa+=bl.field._nextTurnPaBonus; bl.field._nextTurnPaBonus=0; }
       bl.pa=Math.min(PA_MAX,skipPa); bl.paBonus=0;
       const skipLog=[];
       if(bb>0) skipLog.push(`+${bb} acum.`);
       if(skipSB>0) skipLog.push(`+${skipSB}⚡ ítem`);
-      if(skipLog.length) addLog(`▶️ ${bl.name} retoma — ${bl.pa} PA (+${PA_REGEN} turno · ${skipLog.join(' · ')})`,'sys');
+      if(skipLog.length) addLog(`▶️ ${bl.name} retoma — ${bl.pa} PA (${PA_BASE} base · ${skipLog.join(' · ')})`,'sys');
       else addLog(`▶️ ${bl.name} retoma — ${bl.pa} PA`,'sys');
       G.turn=bk; G.turnNum++;
       // Mismo bug fix que arriba: usar el calculo centralizado que chequea
@@ -11846,7 +11848,7 @@ function stepOnlineRule2(key, delta) {
 function _stepOnlineRuleShared(key, delta, suffix) {
   const limits = {
     rulesPaBase:   { min: 1, max: 20, fallback: () => PA_BASE_VAL() },
-    rulesPaMax:    { min: 1, max: 8, fallback: () => PA_MAX_VAL() },
+    rulesPaMax:    { min: 1, max: 20, fallback: () => PA_MAX_VAL() },
     rulesSwapMin:  { min: 0, max: 20, fallback: () => PA_SWAP_MIN() },
     rulesDeckMax:  { min: 3, max: 30, fallback: () => RULES_DECK_MAX() },
     rulesHealAmount:{ min: 5, max: 100, fallback: () => 20 },
@@ -14691,8 +14693,8 @@ window.lanCreateRoom = async function() {
 
         // ── Cooldown de 4s antes de habilitar el botón Iniciar ──
         const startBtn = document.getElementById('lobby-start-btn') || document.getElementById('online-start-btn');
-        if(startBtn) startBtn.disabled = true;
-        let cdSecs = 4;
+        if(startBtn){ startBtn.style.display='block'; startBtn.disabled = true; }
+        let cdSecs = 2;
         const cdTick = setInterval(() => {
           cdSecs--;
           const txt = document.getElementById('lobby-status-txt');
@@ -14700,7 +14702,7 @@ window.lanCreateRoom = async function() {
             if(txt) txt.textContent = `✅ ¡Amigo conectado! Iniciando en ${cdSecs}...`;
           } else {
             clearInterval(cdTick);
-            if(txt) txt.textContent = '✅ ¡Amigo conectado! Podés iniciar la partida.';
+            if(txt) txt.textContent = '✅ ¡Amigo conectado! Tocá CONTINUAR para preparar la partida.';
             if(startBtn) startBtn.disabled = false;
             // dot verde sólido
             const dot = document.getElementById('lobby-dot');
@@ -15200,7 +15202,7 @@ console.log('[KARTALIA] Parche LAN/Online/Firebase v2 cargado correctamente');
   function pcCost() {
     const hp = +($('inp-hp') || {}).value || 0, atk = +($('inp-atk') || {}).value || 0;
     const h = Math.round(hp / 7 * 10) / 10, a = Math.round(atk / 7 * 10) / 10;
-    const s = (PC_SKILL[getSkill(1)] ?? 99) + (PC_SKILL[getSkill(2)] ?? 99), p = PC_PASS[getPassive()] ?? 99;
+    const s = (PC_SKILL[getSkill(1)] ?? 8) + (PC_SKILL[getSkill(2)] ?? 8), p = PC_PASS[getPassive()] ?? 8;
     return { h: h, a: a, s: s, p: p, total: Math.round(((hp + atk) / 7 + s + p) * 10) / 10 };
   }
   function pcRender() {
@@ -15220,22 +15222,22 @@ console.log('[KARTALIA] Parche LAN/Online/Firebase v2 cargado correctamente');
     ov.classList.toggle('has-img', hasImg);
   }
   window.KART_PC = { MAX: PC_MAX, SKILL: PC_SKILL, PASS: PC_PASS };      // tablas de costo (editar aquí para rebalancear)
-  const abilityPC = () => (PC_SKILL[getSkill(1)] ?? 99) + (PC_SKILL[getSkill(2)] ?? 99) + (PC_PASS[getPassive()] ?? 99);
+  const abilityPC = () => (PC_SKILL[getSkill(1)] ?? 8) + (PC_SKILL[getSkill(2)] ?? 8) + (PC_PASS[getPassive()] ?? 8);
   // El pool de vida+ataque sale de los PC que sobran: 1 PC = 7 puntos (sin habilidades = 700, como antes)
-  window.getEditorPool = function () { return Math.max(HP_MIN + ATK_MIN, Math.floor((PC_MAX - abilityPC()) * 7 / 10) * 10); };
+  window.getEditorPool = function () { return Math.max(30, Math.floor((PC_MAX - abilityPC()) * 7 / 10) * 10); };
   let fitting = false;
   function fitStats() {
     if (fitting) return; fitting = true;
     try {
       const h = $('inp-hp'), a = $('inp-atk'); if (!h || !a) return;
       const pool = getEditorPool();
-      if (+h.value + +a.value > pool || +h.max !== Math.min(STAT_MAX, pool - ATK_MIN) || +a.max !== Math.min(ATK_MAX, pool - HP_MIN)) syncSliders(+h.value, +a.value);
+      if (+h.value + +a.value > pool || +h.max !== Math.min(STAT_MAX, pool - 5) || +a.max !== Math.min(STAT_MAX, pool - 20)) syncSliders(+h.value, +a.value);
       const hr = $('hp-rem'), ar = $('atk-rem'); if (hr) hr.textContent = calcAtkMax(+h.value); if (ar) ar.textContent = calcHpMax(+a.value);
       const note = $('balance-note'), lbl = $('balance-pool-lbl'), low = pool <= 430;
       if (lbl) { lbl.textContent = pool + ' pts'; lbl.style.color = low ? '#ef4444' : 'var(--amber2)'; }
       if (note) {
         const ex = note.querySelector('.balance-extra'); if (ex) ex.remove();
-        if (pool < 700) { const s = document.createElement('span'); s.className = 'balance-extra'; s.innerHTML = ' <span style="font-size:9px;color:var(--text2);">⚙️ Habilidades y pasiva usan PC: HP máx ' + Math.min(STAT_MAX, pool - ATK_MIN) + ' / ATK máx ' + Math.min(ATK_MAX, pool - HP_MIN) + '</span>'; note.appendChild(s); }
+        if (pool < 700) { const s = document.createElement('span'); s.className = 'balance-extra'; s.innerHTML = ' <span style="font-size:9px;color:var(--text2);">⚙️ Habilidades y pasiva usan PC: HP máx ' + Math.min(STAT_MAX, pool - 5) + ' / ATK máx ' + Math.min(STAT_MAX, pool - 20) + '</span>'; note.appendChild(s); }
       }
     } finally { fitting = false; }
   }
@@ -15275,8 +15277,8 @@ console.log('[KARTALIA] Parche LAN/Online/Firebase v2 cargado correctamente');
   };
   window.stepStat = function (which, dir) {              // botones +/−: igual que deslizar, el otro stat cede en el tope
     const el = $('inp-' + which); if (!el) return;
-    const st = STEP, cur = +el.value, a = Math.ceil((which === 'hp' ? HP_MIN : ATK_MIN) / st) * st;
-    const b = Math.max(a, floorTo(Math.min(which === 'hp' ? STAT_MAX : ATK_MAX, getEditorPool() - (which === 'hp' ? ATK_MIN : HP_MIN)), st));
+    const st = STEP, cur = +el.value, a = Math.ceil((which === 'hp' ? 20 : 5) / st) * st;
+    const b = Math.max(a, floorTo(Math.min(STAT_MAX, getEditorPool() - (which === 'hp' ? 5 : 20)), st));
     let v = dir > 0 ? (Math.floor(cur / st) + 1) * st : (Math.ceil(cur / st) - 1) * st;
     v = Math.max(a, Math.min(b, v));
     if ((dir < 0 && v > cur) || (dir > 0 && v < cur)) v = cur;
@@ -15288,7 +15290,7 @@ console.log('[KARTALIA] Parche LAN/Online/Firebase v2 cargado correctamente');
     const b = e.target.closest && e.target.closest('#step-sel button'); if (!b) return;
     STEP = +b.dataset.s === 10 ? 10 : 5; try { localStorage.setItem(KEY, STEP); } catch (_) {}
     paintStep();
-    const h = $('inp-hp'), a = $('inp-atk'); if (h && a) { onHp(snapStat(h, HP_MIN)); onAtk(snapStat(a, ATK_MIN)); }
+    const h = $('inp-hp'), a = $('inp-atk'); if (h && a) { onHp(snapStat(h, 20)); onAtk(snapStat(a, 5)); }
   });
   paintStep();
 
@@ -15358,9 +15360,7 @@ console.log('[KARTALIA] Parche LAN/Online/Firebase v2 cargado correctamente');
   };
 
   /* ===== Subsección: Defensa por Puntos de Combate sin usar (0,5 % por PC libre, máx. 12 %) ===== */
-  /* DEFENSA POR PC LIBRES (BALANCE v2): 0,25 % por PC entero libre, tope 8 %. Para retocar: cambiar 0.25 y 8 aquí.
-     Se calcula SOLO desde hp/atk/habilidades/pasiva de la carta (kartPcDefPct) y se recalcula en cada cloneCard. */
-  window.kartDefFromPc = left => Math.min(8, Math.floor(Math.max(0, left) + 1e-6) * 0.25);
+  window.kartDefFromPc = left => Math.min(12, Math.floor(Math.max(0, left) + 1e-6) * 0.5);
   window.kartPcDefPct = function (c) {
     if (!c) return 0; if (typeof c._pcDef === 'number') return c._pcDef;
     const K = window.KART_PC; if (!K) return 0;
@@ -15580,76 +15580,75 @@ function _askLeaveLobby(){ var host=false; try{ host=(onlineRole==='host'); }cat
 })();
 </script>
 <script>
-/* ======================================================================
-   MÓDULO BALANCE v2 · PARTE 1 — datos, límites, costes, PA y migración.
-   (Parte 2 = motor de combate: daño centralizado, habilidades, pasivas, IA, online.)
-   ====================================================================== */
-(function () {
-  'use strict';
-  const K = window.KART_PC; if (!K) { console.warn('[balance v2] KART_PC no disponible'); return; }
-  /* Costes de CONSTRUCCIÓN (PC). Editar aquí para rebalancear. (Los PA de uso están en SKILLS[].pa) */
-  Object.assign(K.SKILL, {none:0,shield:7,heal:8,regen:8,buff:7,fire:8,poison:8,barrier:7,stun:8,double:11,triple:14,quad:17,pasurge:5,sacrifice:9,freeze:10,sleep:8,shielddice:6,vampstrike:9,lastcard:12,explosion:16,armorbreak:7,rally:8,decoy:6,cut:8});
-  Object.assign(K.PASS, {none:0,thorns:5,laststand:7,ironhide:7,lifesteal:8,momentum:7,resilience:6,venomous:8,berserker:9,spellshield:10,rebirth:12,rebirth2:18,rebirth3:24,energize:6,counter:6,bulwark:8,vampiric:8,swift:14,spiked:7,volatile:7,transform:10,guardian:8,cursed:8,doublestrike:22,triplestrike:32,quadstrike:42});
-  const PA_CAP = 8;
-  const skillMinPa = id => { const s = SKILLS.find(x => x.id === id); return s && id !== 'none' ? s.pa : 0; };   // mínimo = coste base de SKILLS
-  const clampPa = (id, v) => { const m = skillMinPa(id); if (!m) return 0; v = Math.round(+v); if (!Number.isFinite(v)) v = m; return Math.max(m, Math.min(PA_CAP, v)); };
-  const knownS = new Set(SKILLS.map(s => s.id)), knownP = new Set(PASSIVES.map(p => p.id));
-  const apc = c => (K.SKILL[c.skill] || 0) + (K.SKILL[c.skill2] || 0) + (K.PASS[c.passive] || 0);
-  function normalizeCard(c) {     // idempotente: se usa al cargar, guardar, importar y desplegar
-    if (!c || typeof c !== 'object') return c;
-    const oldHp = +c.hp;
-    if (!knownS.has(c.skill))  { if (c.skill)  c._legacySkill  = c.skill;  c.skill  = 'none'; }
-    if (!knownS.has(c.skill2)) { if (c.skill2) c._legacySkill2 = c.skill2; c.skill2 = 'none'; }
-    if (c.skill2 === c.skill && c.skill !== 'none') c.skill2 = 'none';          // misma habilidad dos veces no permitida
-    if (!knownP.has(c.passive)) { if (c.passive) c._legacyPassive = c.passive; c.passive = 'none'; }
-    const pool = Math.max(HP_MIN + ATK_MIN, Math.floor((K.MAX - apc(c)) * 7 / 10) * 10);
-    const num = (v, d) => (v !== null && v !== '' && Number.isFinite(+v)) ? +v : d;
-    let hp = Math.max(HP_MIN, Math.min(STAT_MAX, Math.round(num(c.hp, HP_MIN))));
-    let atk = Math.max(ATK_MIN, Math.min(ATK_MAX, Math.round(num(c.atk, ATK_MIN))));
-    if (hp + atk > pool) { atk = Math.max(ATK_MIN, pool - hp); if (hp + atk > pool) hp = pool - atk; }
-    c.hp = Math.max(HP_MIN, Math.floor(hp / 5) * 5); c.atk = Math.max(ATK_MIN, Math.floor(atk / 5) * 5);
-    if (Number.isFinite(+c.curHp) && oldHp > 0) c.curHp = Math.max(1, Math.min(c.hp, Math.round(+c.curHp / oldHp * c.hp)));  // conserva la proporción de vida
-    c.skillPa  = c.skill  === 'none' ? 0 : clampPa(c.skill,  c.skillPa  !== undefined ? c.skillPa  : skillMinPa(c.skill));
-    c.skillPa2 = c.skill2 === 'none' ? 0 : clampPa(c.skill2, c.skillPa2 !== undefined ? c.skillPa2 : skillMinPa(c.skill2));
-    delete c._pcDef;               // la defensa por PC se recalcula con las estadísticas corregidas
-    return c;
-  }
-  window.kartNormalizeCard = normalizeCard; window.kartSkillMinPa = skillMinPa;
-
-  /* Todo guardado de la base normaliza las cartas (cubre crear, editar, importar y plantillas). */
-  const _sdb = window.saveDB;
-  window.saveDB = function () {
-    if (!window._kartMigBlocked) { try { Object.keys(DB).forEach(k => { if (Array.isArray(DB[k])) DB[k].forEach(normalizeCard); }); } catch (e) { console.warn(e); } }
-    return _sdb.apply(this, arguments);
-  };
-
-  /* Editor: el mínimo de PA de cada habilidad se aplica en deslizador, selección y reconstrucción. */
-  const lastSel = { 1: 'none', 2: 'none' };
-  function syncPaUi(slot, id) {
-    lastSel[slot] = id || 'none'; const el = document.getElementById('inp-skill-pa-' + slot); if (!el || lastSel[slot] === 'none') return;
-    const m = skillMinPa(id); el.min = m; el.max = PA_CAP;
-    if (+el.value < m) { el.value = m; if (typeof onSkillPaInput === 'function') onSkillPaInput(slot, m); }
-  }
-  const _bsg = window.buildSkillGrid; if (typeof _bsg === 'function') window.buildSkillGrid = function (slot, sel) { const r = _bsg.apply(this, arguments); try { syncPaUi(slot, sel); } catch (e) {} return r; };
-  const _pk = window.pickSkill;       if (typeof _pk === 'function')  window.pickSkill     = function (slot, id)  { const r = _pk.apply(this, arguments);  try { syncPaUi(slot, id); }  catch (e) {} return r; };
-  const _op = window.onSkillPaInput;  if (typeof _op === 'function')  window.onSkillPaInput = function (slot, val) {
-    const id = lastSel[slot]; if (id && id !== 'none') { val = clampPa(id, val); const el = document.getElementById('inp-skill-pa-' + slot); if (el) el.value = val; }
-    return _op.call(this, slot, val);
-  };
-
-  /* MIGRACIÓN SEGURA: respaldo único previo; sin respaldo no se toca el almacenamiento. */
-  (function migrate() {
-    const BK = 'kartalia2_backup_pre_balance_v2'; let raw = null; try { raw = localStorage.getItem('kartalia2'); } catch (e) {}
-    if (raw === null) return;
-    let hasBk = false;
-    try { hasBk = localStorage.getItem(BK) !== null; if (!hasBk) { localStorage.setItem(BK, raw); hasBk = true; } } catch (e) { console.warn('[balance v2] no se pudo respaldar', e); }
-    if (!hasBk) { window._kartMigBlocked = true; try { toast('⚠️ Sin espacio para el respaldo: no se modificaron tus cartas guardadas (en combate se aplican igual los límites nuevos)', 6000); } catch (e) {} return; }
-    const sig = c => [c.hp, c.atk, c.skill, c.skill2, c.passive, c.skillPa, c.skillPa2, c._pcDef].join('|'); let n = 0;
-    Object.keys(DB).forEach(k => { if (Array.isArray(DB[k])) DB[k].forEach(c => { const s0 = sig(c); normalizeCard(c); if (sig(c) !== s0) n++; }); });
-    if (n) { saveDB(); try { toast('⚖️ Balance v2: ' + n + ' carta(s) ajustada(s) a los límites nuevos. Respaldo guardado.', 5000); } catch (e) {} }
-  })();
+/* ===== KARTALIA · REBALANCE v2 (PC, límites, defensa, topes de daño, migración) =====
+   Tablas de coste: KART_PC.SKILL / KART_PC.PASS (PC de construcción) y SKILLS[].pa (PA mínimos).
+   Defensa por PC libres: kartDefFromPc (0,25 % por PC libre, máx 8 %). Topes de daño: _capHit. */
+(function(){
+ var $=function(i){return document.getElementById(i);}, LS=window.localStorage;
+ var SK={none:0,shield:7,heal:8,regen:8,buff:7,fire:8,poison:8,barrier:7,stun:8,double:11,triple:14,quad:17,pasurge:5,sacrifice:9,freeze:10,sleep:8,shielddice:6,vampstrike:9,lastcard:12,explosion:16,armorbreak:7,rally:8,decoy:6,cut:8};
+ var PS={none:0,thorns:5,laststand:7,ironhide:7,lifesteal:8,momentum:7,resilience:6,venomous:8,berserker:9,spellshield:10,rebirth:12,rebirth2:18,rebirth3:24,energize:6,counter:6,bulwark:8,vampiric:8,swift:14,spiked:7,volatile:7,transform:10,guardian:8,cursed:8,doublestrike:22,triplestrike:32,quadstrike:42};
+ var PA={shield:2,heal:2,regen:3,buff:2,fire:3,poison:3,barrier:3,stun:3,double:4,triple:5,quad:6,pasurge:2,sacrifice:4,freeze:4,sleep:4,shielddice:2,vampstrike:3,lastcard:4,explosion:5,armorbreak:3,rally:3,decoy:2,cut:3};
+ Object.assign(KART_PC.SKILL,SK); Object.assign(KART_PC.PASS,PS);
+ SKILLS.forEach(function(s){ if(PA[s.id]) s.pa=PA[s.id]; });
+ window.kartDefFromPc=function(left){ return Math.min(8,Math.floor(Math.max(0,left)+1e-6)*0.25); };
+ var step=function(){ return (+LS.getItem('kart_stat_step')===10)?10:5; };
+ window.calcHpMax=function(a){ return Math.min(600,getEditorPool()-Math.max(10,a)); };
+ window.calcAtkMax=function(h){ return Math.min(100,getEditorPool()-Math.max(100,h)); };
+ window.syncSliders=function(hp,atk){ var p=getEditorPool(),mh=Math.min(600,p-10),ma=Math.min(100,p-100);
+  atk=Math.max(10,Math.min(ma,atk)); hp=Math.max(100,Math.min(mh,hp)); if(hp+atk>p) hp=Math.max(100,p-atk);
+  var h=$('inp-hp'),a=$('inp-atk'); h.min=100;h.max=mh;h.value=hp; a.min=10;a.max=ma;a.value=atk;
+  $('hp-lbl').textContent=hp; $('atk-lbl').textContent=atk; $('hp-rem').textContent=calcAtkMax(hp); $('atk-rem').textContent=calcHpMax(atk); };
+ window.onHp=function(v){ v=Math.max(100,Math.min(600,v)); var ae=$('inp-atk'),a=+ae.value,am=calcAtkMax(v); if(a>am){ a=Math.max(10,am); ae.value=a; $('atk-lbl').textContent=a; }
+  $('hp-lbl').textContent=v; $('hp-rem').textContent=calcAtkMax(v); $('atk-rem').textContent=calcHpMax(a); refreshPreview(); };
+ window.onAtk=function(v){ v=Math.max(10,Math.min(100,v)); var he=$('inp-hp'),h=+he.value,hm=calcHpMax(v); if(h>hm){ h=Math.max(100,hm); he.value=h; $('hp-lbl').textContent=h; }
+  $('atk-lbl').textContent=v; $('atk-rem').textContent=calcHpMax(v); $('hp-rem').textContent=calcAtkMax(h); refreshPreview(); };
+ window.snapStat=function(el){ var st=step(),a=Math.ceil((+el.min||0)/st)*st,b=Math.max(a,Math.floor((+el.max||600)/st)*st),v=Math.max(a,Math.min(b,Math.round(+el.value/st)*st)); el.value=v; return v; };
+ window.stepStat=function(w,d){ var el=$('inp-'+w); if(!el) return; var st=step(),c=+el.value,a=Math.ceil((+el.min||0)/st)*st,b=Math.max(a,Math.floor(+el.max/st)*st),v=d>0?(Math.floor(c/st)+1)*st:(Math.ceil(c/st)-1)*st; v=Math.max(a,Math.min(b,v)); el.value=v; (w==='hp'?onHp:onAtk)(v); };
+ var _rp=window.refreshPreview; window.refreshPreview=function(){ var r=_rp.apply(this,arguments); try{ var n=$('balance-note'); if(n) n.innerHTML='⚖️ <b style="color:var(--amber2);">Balance</b>: HP 100–600 y ATK 10–100 comparten <b id="balance-pool-lbl" style="color:var(--amber2);">'+getEditorPool()+' pts</b> = (100 − PC de habilidades y pasiva) × 7. Cada 7 pts = 1 PC.'; }catch(e){} return r; };
+ /* topes de daño directo: 25 % por golpe (35 % sacrificios), 40 % acumulado por turno; un objetivo con ≤25 % de HP sí puede rematarse */
+ window._capHit=function(att,def,dmg,pct){ try{
+  if(!def||!(dmg>0)||!def.hp||def.curHp<=def.hp*0.25) return dmg;
+  var out=Math.min(dmg,Math.floor(def.hp*(pct||0.25))), seq=(typeof G==='object'&&G)?(G._kseq||0):0, t=def._kTk;
+  if(!t||t.s!==seq) t=def._kTk={s:seq,d:0};
+  out=Math.max(0,Math.min(out,Math.floor(def.hp*0.40)-t.d)); t.d+=out;
+  if(out<dmg) addLog('🛡️ Límite de daño: '+((att&&att.name)||'el ataque')+' hace '+out+' a '+def.name+' (tope 25% por golpe y 40% por turno de sus HP máx)','sys');
+  return out; }catch(e){ return dmg; } };
+ var _et=window.endTurn; window.endTurn=function(){ try{ if(G) G._kseq=(G._kseq||0)+1; }catch(e){} return _et.apply(this,arguments); };
+ /* normalización + migración segura (copia de seguridad única antes de tocar nada) */
+ var cl=function(v,a,b){ v=Math.round(+v); if(!isFinite(v)) v=a; return Math.max(a,Math.min(b,v)); };
+ var k=function(t,id){ id=id||'none'; return t[id]!==undefined?t[id]:8; };
+ window.kNormCard=function(c){ if(!c||typeof c!=='object'||c.hp===undefined) return c;
+  var p=Math.max(110,Math.floor((100-k(SK,c.skill)-k(SK,c.skill2)-k(PS,c.passive))*7/10)*10), hp=cl(c.hp,100,600), atk=cl(c.atk,10,100);
+  if(hp+atk>p){ hp=Math.max(100,p-atk); if(hp+atk>p) atk=Math.max(10,p-hp); }
+  c.hp=hp; c.atk=atk; delete c._pcDef; delete c._kTk;
+  [['skillPa','skill'],['skillPa2','skill2']].forEach(function(x){ if(c[x[0]]!==undefined){ var m=PA[c[x[1]]]; if(m) c[x[0]]=cl(c[x[0]],m,8); else delete c[x[0]]; } });
+  ['pasurgeAmount','pasurgeAmount2'].forEach(function(x){ if(c[x]!==undefined) c[x]=cl(c[x],2,5); });
+  return c; };
+ function normAll(){ Object.keys(DB).forEach(function(n){ if(Array.isArray(DB[n])) DB[n].forEach(kNormCard); }); }
+ var _sd=window.saveDB; window.saveDB=function(){ try{ normAll(); }catch(e){} return _sd.apply(this,arguments); };
+ try{ var raw=LS.getItem('kartalia2'); if(raw&&!LS.getItem('kartalia2_backup_prebalance')) LS.setItem('kartalia2_backup_prebalance',raw); normAll(); window.saveDB(); }catch(e){ console.warn('[balance]',e); }
 })();
 
+</script>
+<script>
+/* Parámetros fijos desde el rebalance: Curación, Fuego, Regenerar y Corte ya no son configurables por carta */
+(function(){ var FIX={heal:1,fire:1,regen:1,cut:1};
+ window.showSubCfg=function(slot,skillId){ SUB_CFGS.forEach(function(id){ var el=document.getElementById(id+'-custom-sec-'+slot); if(el) el.style.display=(skillId===id&&!FIX[id])?'block':'none'; }); };
+})();
+</script>
+<script>
+/* ===== Sala local: botón CONTINUAR del anfitrión + control de versión entre los dos celulares ===== */
+window.APP_VER='balance-v4';
+window._lanHostContinue=function(){ var b=document.getElementById('lobby-start-btn'); if(b) b.style.display='none';
+ try{ showOnlineSetup(); }catch(e){ console.warn('[continuar]',e); }
+ try{ send({type:'CONNECTED',hostName:lanProfile.name,hostEmoji:lanProfile.emoji||'🦊'}); }catch(e){}
+ var hp=document.getElementById('lobby-host-panel'); if(hp) hp.style.display='none'; };
+(function(){
+ var _sos=window.showOnlineSetup; window.showOnlineSetup=function(){ var b=document.getElementById('lobby-start-btn'); if(b) b.style.display='none'; return _sos.apply(this,arguments); };
+ var lb=document.querySelector('#lobby-screen .lobby-body'); if(lb){ var d=document.createElement('div'); d.style.cssText='margin-top:auto;font-size:10px;color:var(--text3);text-align:center;padding:10px;'; d.textContent='Versión '+APP_VER; lb.appendChild(d); }
+ var _sch=window.setupConnHandlers; window.setupConnHandlers=function(conn){ _sch(conn); conn.on('open',function(){ setTimeout(function(){ try{ conn.send({type:'VER',v:APP_VER}); }catch(e){} },600); }); };
+ var _hom=window.handleOnlineMessage; window.handleOnlineMessage=function(d){ if(d&&d.type==='VER'){ if(d.v!==APP_VER) toast('⚠️ Tu amigo usa otra versión ('+d.v+'). Los dos deben usar el mismo archivo ('+APP_VER+').',7000); return; } return _hom.apply(this,arguments); };
+})();
 </script>
 </body>
 </html>
