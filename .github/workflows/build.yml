@@ -1,192 +1,405 @@
-# ═══════════════════════════════════════════════════════════════
-#  KARTALIA · Compilar APK con GitHub Actions
+# =============================================================================
+#  KARTALIA · APK nativo con GitHub Actions (Capacitor + LAN nativa)
 #
-#  ARCHIVOS (todos sueltos, el resto lo genera este workflow):
-#    index.html                    -> el juego (raíz del repositorio)
-#    version.txt                   -> solo el número, ej: 1.0
-#    .github/workflows/build.yml   -> ESTE archivo
-#    icon.png (opcional)           -> icono cuadrado de la app
+#  Sube al repositorio (todos sueltos):
+#    index.html ..................... tu juego
+#    version.txt .................... solo el número: 1.0 / 1.1 / 1.2 / 2.0 / 3.0 ...
+#    icon.png ....................... (opcional) icono cuadrado, ideal 1024x1024
+#    .github/workflows/build.yml .... este archivo
 #
-#  VERSIÓN NUEVA: sube el index.html nuevo y cambia el número de
-#  version.txt (1.0 -> 1.1 -> 1.2 ...). Al guardar version.txt se
-#  compila solo y el APK aparece en "Releases" del repositorio.
-#  También sirve "Actions -> Compilar APK Kartalia -> Run workflow".
+#  Publicar una versión nueva: sube el index.html y, AL FINAL, cambia version.txt.
+#  Cambiar version.txt dispara la compilación y deja el APK en "Releases".
+#  También se puede lanzar a mano: Actions > Compilar APK > Run workflow.
 #
-#  SECRETO (una sola vez): Settings -> Secrets and variables ->
-#  Actions -> New repository secret
-#     KEYSTORE_PASSWORD = contraseña larga inventada por ti (guárdala)
-#                         solo letras SIN tilde/ñ, números y símbolos
-#
-#  NO CAMBIES: APP_ID, la contraseña, ni borres
-#  signing/kartalia.keystore.enc (lo crea el primer build).
-#  Con eso todas las versiones llevan la MISMA firma y Android
-#  las instala como actualización sin conflicto de paquete.
-# ═══════════════════════════════════════════════════════════════
-name: Compilar APK Kartalia
+#  FIRMA: la primera vez se crea una llave en signing/kartalia.keystore y se guarda
+#  en el repo. Todas las versiones siguientes se firman con ESA misma llave, por eso
+#  las actualizaciones entran encima sin error. No borres la carpeta signing/.
+#  Opcional (recomendado si el repo es público): antes de la primera compilación crea
+#  el secreto KEYSTORE_PASSWORD (Settings > Secrets and variables > Actions).
+# =============================================================================
+name: Compilar APK
 
 on:
   push:
     branches: [main, master]
-    paths: ['version.txt']
+    paths: [version.txt]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: build-apk
+  group: kartalia-apk
   cancel-in-progress: false
 
 env:
   APP_NAME: Kartalia
-  APP_ID: app.kartalia.juego
-  GAME_HTML: index.html
+  APP_ID: app.kartalia.juego        # NO lo cambies nunca después de publicar
+  CAP_VERSION: "8.5.3"              # Capacitor fijo (Gradle 8.14, Java 21)
+  FULLSCREEN: "true"                # true = pantalla completa inmersiva
+  ORIENTATION: "portrait"           # portrait | landscape | auto
+  KEY_ALIAS: kartalia
+  KEYSTORE_PATH: signing/kartalia.keystore
+  KS_DEFAULT_PASS: kartalia-firma-estable
 
 jobs:
-  apk:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Descargar el repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Leer la version de version.txt
-        id: ver
-        run: |
-          set -euo pipefail
-          test -f version.txt || { echo "::error::Falta version.txt (contenido de ejemplo: 1.0)"; exit 1; }
-          test -f "$GAME_HTML" || { echo "::error::No encuentro $GAME_HTML en la raíz del repositorio"; exit 1; }
-          VER=$(tr -d ' \t\r\n' < version.txt | sed 's/^[vV]//')
-          echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || { echo "::error::version.txt debe verse así: 1.0, 1.1, 1.2 (leí: '$VER')"; exit 1; }
-          IFS=. read -r MA MI PA <<< "$VER"; PA=${PA:-0}
-          if [ "$((10#$MI))" -gt 99 ] || [ "$((10#$PA))" -gt 99 ]; then echo "::error::Los números después del primer punto van de 0 a 99"; exit 1; fi
-          CODE=$((10#$MA * 10000 + 10#$MI * 100 + 10#$PA))
-          echo "ver=$VER" >> "$GITHUB_OUTPUT"
-          echo "code=$CODE" >> "$GITHUB_OUTPUT"
-          echo "Versión $VER (versionCode $CODE)"
-
-      - name: Instalar Node 22
-        uses: actions/setup-node@v4
+      - name: Node 22
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      - name: Instalar Java 21
-        uses: actions/setup-java@v4
+      - name: Java 21
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: 21
 
-      - name: Firma estable (keystore cifrada dentro del repo)
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      # ---------------------------------------------------------------- versión
+      - name: Leer version.txt
         run: |
-          set -euo pipefail
-          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "::error::Falta el secreto KEYSTORE_PASSWORD (Settings -> Secrets and variables -> Actions)"; exit 1
+          if [ ! -f version.txt ]; then
+            echo "::error::Falta version.txt (escribe dentro solo el número, por ejemplo 1.0)"; exit 1
           fi
-          if printf '%s' "$KEYSTORE_PASSWORD" | LC_ALL=C grep -q '[^ -~]'; then
-            echo "::error::KEYSTORE_PASSWORD solo puede tener letras SIN tilde, números y símbolos (nada de ñ, tildes ni emojis)"; exit 1
+          RAW=$(head -n1 version.txt | tr -d '\r' | sed -E 's/^\xEF\xBB\xBF//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^[vV]//')
+          if ! [[ "$RAW" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error::version.txt debe tener formato 1.0, 1.1, 2.0 ... y tiene: '$RAW'"; exit 1
           fi
-          ENC=signing/kartalia.keystore.enc
-          KS="$RUNNER_TEMP/release.keystore"
-          if [ -f "$ENC" ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ENC" -out "$KS" -pass env:KEYSTORE_PASSWORD
-            echo "Keystore existente descifrada"
+          IFS=. read -r MA MI PA <<< "$RAW"
+          MA=$((10#$MA)); MI=$((10#${MI:-0})); PA=$((10#${PA:-0}))
+          if [ "$MI" -gt 99 ] || [ "$PA" -gt 99 ]; then
+            echo "::error::Los números después del primer punto no pueden pasar de 99"; exit 1
+          fi
+          CODE=$((MA * 10000 + MI * 100 + PA))
+          echo "VERSION_NAME=$RAW" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "Versión $RAW  (versionCode $CODE: siempre sube cuando subes el número)"
+
+      # -------------------------------------------------------------- archivos web
+      - name: Preparar archivos web
+        run: |
+          mkdir -p _apk/www
+          if [ -f index.html ]; then
+            HTML=index.html
           else
-            keytool -genkeypair -storetype PKCS12 -keystore "$KS" -alias kartalia -keyalg RSA -keysize 2048 -validity 36500 -storepass:env KEYSTORE_PASSWORD -keypass:env KEYSTORE_PASSWORD -dname "CN=Kartalia, O=KennyKressinR, C=PY"
-            mkdir -p signing
-            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$KS" -out "$ENC" -pass env:KEYSTORE_PASSWORD
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add "$ENC"
-            git commit -m "Keystore cifrada de Kartalia (NO borrar este archivo)"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-            echo "Keystore nueva creada y guardada en $ENC"
+            HTML=$(ls -1 *.html 2>/dev/null | sort -V | tail -n1 || true)
           fi
-          keytool -list -keystore "$KS" -alias kartalia -storepass:env KEYSTORE_PASSWORD > /dev/null
-          echo "KS_PATH=$KS" >> "$GITHUB_ENV"
-
-      - name: Crear el proyecto Android con Capacitor
-        run: |
-          set -euo pipefail
-          mkdir -p www && cp "$GAME_HTML" www/index.html
-          npm init -y > /dev/null
-          npm install --no-audit --no-fund @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
-          npx cap telemetry off || true
-          printf '{"appId":"%s","appName":"%s","webDir":"www"}\n' "$APP_ID" "$APP_NAME" > capacitor.config.json
-          npx cap add android
-
-      - name: Icono (si subiste icon.png)
-        run: |
-          IM=$(command -v magick || command -v convert || true)
-          if [ ! -f icon.png ]; then echo "Sin icon.png: se usa el icono por defecto"; exit 0; fi
-          if [ -z "$IM" ]; then echo "::warning::No hay ImageMagick, se usa el icono por defecto"; exit 0; fi
-          RES=android/app/src/main/res
-          rm -rf "$RES"/mipmap-anydpi-v26
-          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-            n=${d%%:*}; s=${d##*:}; mkdir -p "$RES/mipmap-$n"
-            "$IM" icon.png -resize "${s}x${s}!" "$RES/mipmap-$n/ic_launcher.png" \
-              && cp "$RES/mipmap-$n/ic_launcher.png" "$RES/mipmap-$n/ic_launcher_round.png" \
-              || echo "::warning::No pude generar el icono $n"
+          if [ -z "$HTML" ]; then
+            echo "::error::No encontré ningún .html en la raíz del repo. Sube tu index.html"; exit 1
+          fi
+          echo "Pantalla principal: $HTML"
+          cp "$HTML" _apk/www/index.html
+          # archivos sueltos extra (sonidos, imágenes, css, js...) junto al html
+          find . -maxdepth 1 -type f \( -iname '*.css' -o -iname '*.js' -o -iname '*.mp3' -o -iname '*.ogg' -o -iname '*.wav' -o -iname '*.m4a' -o -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.svg' -o -iname '*.ico' -o -iname '*.woff' -o -iname '*.woff2' -o -iname '*.ttf' -o -iname '*.otf' \) ! -iname 'icon.png' -exec cp {} _apk/www/ \;
+          for d in assets img images sounds audio fonts css js icons lib; do
+            if [ -d "$d" ]; then cp -r "$d" "_apk/www/$d"; fi
           done
 
-      - name: Poner la version en el APK
+      # ----------------------------------------------- proyecto Android + LAN nativa
+      - name: Crear proyecto Android (Capacitor + plugins LAN)
+        working-directory: _apk
+        run: |
+          cat > package.json <<'EOF'
+          {"name":"kartalia-apk","version":"1.0.0","private":true}
+          EOF
+          npm install --no-audit --no-fund --save-exact --ignore-scripts \
+            "@capacitor/core@$CAP_VERSION" "@capacitor/cli@$CAP_VERSION" "@capacitor/android@$CAP_VERSION" \
+            cordova-plugin-websocket-server@1.6.0 cordova-plugin-zeroconf@1.4.2
+          # el plugin de WebSocket pide jcenter() (ya no existe): se quita, el jar está en Maven Central
+          sed -i '/jcenter()/d' node_modules/cordova-plugin-websocket-server/src/android/websocket-server.gradle
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "$APP_ID",
+            "appName": "$APP_NAME",
+            "webDir": "www",
+            "server": { "androidScheme": "https", "cleartext": true },
+            "android": { "allowMixedContent": true, "backgroundColor": "#0d0d1a" },
+            "plugins": { "SystemBars": { "style": "DARK" } }
+          }
+          EOF
+          npx cap telemetry off >/dev/null 2>&1 || true
+          npx cap add android
+          npx cap sync android
+          # comprobar que los plugins de red local quedaron dentro del APK
+          for f in cordova.js cordova_plugins.js plugins/cordova-plugin-zeroconf/www/zeroconf.js plugins/cordova-plugin-websocket-server/www/wsserver.js; do
+            if [ ! -f "android/app/src/main/assets/public/$f" ]; then
+              echo "::error::Falta $f: el plugin de red local no se instaló"; exit 1
+            fi
+          done
+
+      # ------------------------------------------- versión, permisos y pantalla completa
+      - name: Ajustes nativos (versión, permisos, pantalla completa)
+        working-directory: _apk/android
+        run: |
+          sed -i -E "s/versionCode [0-9]+/versionCode $VERSION_CODE/; s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" app/build.gradle
+          if ! grep -q "versionCode $VERSION_CODE" app/build.gradle || ! grep -q "versionName \"$VERSION_NAME\"" app/build.gradle; then
+            echo "::error::No pude fijar la versión en app/build.gradle"; exit 1
+          fi
+          printf '\norg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8\n' >> gradle.properties
+
+          python3 - <<'PY'
+          import os
+          p = 'app/src/main/AndroidManifest.xml'
+          s = open(p, encoding='utf-8').read()
+          perms = ['ACCESS_NETWORK_STATE', 'ACCESS_WIFI_STATE', 'CHANGE_WIFI_MULTICAST_STATE', 'VIBRATE', 'WAKE_LOCK']
+          add = ''.join('\n    <uses-permission android:name="android.permission.%s" />' % x
+                        for x in perms if 'android.permission.%s"' % x not in s)
+          assert '</manifest>' in s
+          s = s.replace('</manifest>', add + '\n</manifest>')
+          o = os.environ.get('ORIENTATION', 'portrait')
+          if o in ('portrait', 'landscape'):
+              assert 'android:name=".MainActivity"' in s
+              s = s.replace('android:name=".MainActivity"',
+                            'android:name=".MainActivity"\n            android:screenOrientation="%s"' % o, 1)
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+
+          if [ "$FULLSCREEN" = "true" ]; then
+            MAIN="app/src/main/java/$(echo "$APP_ID" | tr . /)/MainActivity.java"
+            cat > "$MAIN" <<'JAVA'
+          package __PKG__;
+
+          import android.os.Bundle;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  ocultarBarras();
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) ocultarBarras();
+              }
+
+              private void ocultarBarras() {
+                  WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                  c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                  c.hide(WindowInsetsCompat.Type.systemBars());
+              }
+          }
+          JAVA
+            sed -i "s/__PKG__/$APP_ID/" "$MAIN"
+          fi
+
+      # ------------------------------------------------------------- icono y splash
+      - name: Icono y pantalla de carga
+        working-directory: _apk
         env:
-          VER: ${{ steps.ver.outputs.ver }}
-          CODE: ${{ steps.ver.outputs.code }}
+          PIP_BREAK_SYSTEM_PACKAGES: "1"
         run: |
-          set -euo pipefail
-          G=android/app/build.gradle
-          sed -E -i "s/(versionCode[[:space:]]*=?[[:space:]]*)[0-9]+/\1$CODE/; s/(versionName[[:space:]]*=?[[:space:]]*)\"[^\"]*\"/\1\"$VER\"/" "$G"
-          grep -Eq "versionCode[[:space:]]*=?[[:space:]]*$CODE([^0-9]|$)" "$G" && grep -Eq "versionName[[:space:]]*=?[[:space:]]*\"$VER\"" "$G" \
-            || { echo "::error::No pude escribir la versión en build.gradle"; grep -nE "versionCode|versionName" "$G" || true; exit 1; }
-          grep -nE "applicationId|versionCode|versionName" "$G"
+          python3 -m pip install --quiet pillow
+          ICON_SRC="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -iname 'icon.png' | head -n1 || true)"
+          if [ -z "$ICON_SRC" ]; then
+            echo "::notice::No hay icon.png en el repo: uso un icono por defecto. Sube un icon.png cuadrado para personalizarlo."
+          else
+            echo "Icono: $ICON_SRC"
+          fi
+          export ICON_SRC
+          python3 - <<'PY'
+          import glob, os, re
+          from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-      - name: Compilar el APK
-        run: |
-          set -euo pipefail
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          RES = 'android/app/src/main/res'
+          SRC = os.environ.get('ICON_SRC', '')
 
-      - name: Firmar el APK
+          def por_defecto():
+              S = 1024
+              im = Image.new('RGBA', (S, S), (13, 13, 26, 255))
+              d = ImageDraw.Draw(im)
+              d.rounded_rectangle((250, 170, 774, 854), radius=70, fill=(230, 170, 40, 255), outline=(255, 226, 140, 255), width=14)
+              d.rounded_rectangle((290, 210, 734, 814), radius=44, outline=(120, 70, 0, 255), width=8)
+              try:
+                  f = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 420)
+              except Exception:
+                  f = ImageFont.load_default(size=420)
+              d.text((512, 520), 'K', font=f, fill=(40, 22, 0, 255), anchor='mm')
+              return im
+
+          ic = Image.open(SRC).convert('RGBA') if SRC and os.path.exists(SRC) else por_defecto()
+          w, h = ic.size
+          s = min(w, h)
+          ic = ic.crop(((w - s) // 2, (h - s) // 2, (w - s) // 2 + s, (h - s) // 2 + s))
+
+          # color de fondo del icono adaptable: promedio del borde si el icono es opaco
+          px = ic.resize((64, 64), Image.LANCZOS).load()
+          ring = [px[i, j] for i in range(64) for j in range(64) if i in (0, 63) or j in (0, 63)]
+          op = [p for p in ring if p[3] > 200]
+          bgc = tuple(sum(p[k] for p in op) // len(op) for k in range(3)) if len(op) > len(ring) * 0.8 else (13, 13, 26)
+
+          def mascara(im, forma, r=0.18):
+              m = Image.new('L', im.size, 0)
+              dd = ImageDraw.Draw(m)
+              if forma == 'circulo':
+                  dd.ellipse((0, 0, im.size[0] - 1, im.size[1] - 1), fill=255)
+              else:
+                  dd.rounded_rectangle((0, 0, im.size[0] - 1, im.size[1] - 1), radius=int(im.size[0] * r), fill=255)
+              out = im.copy()
+              out.putalpha(ImageChops.multiply(im.getchannel('A'), m))
+              return out
+
+          for nombre, f in {'mdpi': 1, 'hdpi': 1.5, 'xhdpi': 2, 'xxhdpi': 3, 'xxxhdpi': 4}.items():
+              d = '%s/mipmap-%s' % (RES, nombre)
+              if not os.path.isdir(d):
+                  continue
+              L, F = int(48 * f), int(108 * f)
+              base = ic.resize((L, L), Image.LANCZOS)
+              mascara(base, 'rect').save('%s/ic_launcher.png' % d)
+              mascara(base, 'circulo').save('%s/ic_launcher_round.png' % d)
+              fg = Image.new('RGBA', (F, F), (0, 0, 0, 0))
+              k = int(F * 0.72)
+              fg.alpha_composite(ic.resize((k, k), Image.LANCZOS), ((F - k) // 2, (F - k) // 2))
+              fg.save('%s/ic_launcher_foreground.png' % d)
+
+          open(RES + '/values/ic_launcher_background.xml', 'w', encoding='utf-8').write(
+              '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#%02x%02x%02x</color>\n</resources>\n' % bgc)
+
+          # pantalla de carga: fondo oscuro del juego + icono al centro (sin el logo de Capacitor)
+          for p in glob.glob(RES + '/drawable*/splash.png'):
+              W, H = Image.open(p).size
+              sp = Image.new('RGBA', (W, H), (13, 13, 26, 255))
+              z = int(min(W, H) * 0.28)
+              sp.alpha_composite(mascara(ic.resize((z, z), Image.LANCZOS), 'rect', 0.2), ((W - z) // 2, (H - z) // 2))
+              sp.convert('RGB').save(p)
+
+          sx = RES + '/values/styles.xml'
+          t = open(sx, encoding='utf-8').read()
+          nuevo = ('<style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">\n'
+                   '        <item name="windowSplashScreenBackground">#0d0d1a</item>\n'
+                   '        <item name="android:background">@drawable/splash</item>\n'
+                   '    </style>')
+          t2 = re.sub(r'<style name="AppTheme\.NoActionBarLaunch".*?</style>', lambda m: nuevo, t, flags=re.S)
+          assert t2 != t, 'no encontré el estilo de lanzamiento'
+          open(sx, 'w', encoding='utf-8').write(t2)
+          print('Iconos y splash listos (fondo adaptable #%02x%02x%02x)' % bgc)
+          PY
+
+      # ----------------------------------------------------------------- firma
+      - name: Firma estable
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          VER: ${{ steps.ver.outputs.ver }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          set -euo pipefail
-          SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          OUT="Kartalia-v${VER}.apk"
-          "$BT/zipalign" -p -f 4 "$SRC" aligned.apk
-          "$BT/apksigner" sign --ks "$KS_PATH" --ks-key-alias kartalia --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out "$OUT" aligned.apk
-          "$BT/apksigner" verify --print-certs "$OUT" | tee cert.txt
-          echo "CERT_SHA=$(grep -m1 'SHA-256' cert.txt | sed 's/.*: //')" >> "$GITHUB_ENV"
-          echo "APK=$OUT" >> "$GITHUB_ENV"
+          PASS="${KS_PASS:-}"
+          if [ -z "$PASS" ]; then
+            PASS="$KS_DEFAULT_PASS"
+            echo "::warning::Firma con la contraseña por defecto. Si el repo es público, crea el secreto KEYSTORE_PASSWORD ANTES de la primera compilación."
+          fi
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          NUEVA=0
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "Primera compilación: creando la firma estable del proyecto..."
+            keytool -genkeypair -keystore "$KEYSTORE_PATH" -storetype PKCS12 -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 36500 -storepass "$PASS" -keypass "$PASS" \
+              -dname "CN=$APP_NAME, O=KennyKressinR, C=PY"
+            NUEVA=1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$PASS" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::La contraseña no abre signing/kartalia.keystore. Si agregaste el secreto KEYSTORE_PASSWORD después de crear la firma, bórralo (o usa la contraseña con la que se creó). NO borres el keystore: cambiaría la firma y fallarían las actualizaciones."
+            exit 1
+          fi
+          if [ "$NUEVA" = "1" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f "$KEYSTORE_PATH"
+            git commit -m "Firma estable de la app (generada automáticamente, no borrar)"
+            if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "::error::No pude guardar la firma en el repo. Activa Settings > Actions > General > Workflow permissions > Read and write permissions y vuelve a ejecutar."
+              exit 1
+            fi
+          fi
 
-      - name: Guardar el APK como archivo del build
-        uses: actions/upload-artifact@v4
+      # --------------------------------------------------------------- compilar
+      - name: Cache de Gradle
+        uses: actions/cache@v4
         with:
-          name: Kartalia-v${{ steps.ver.outputs.ver }}
-          path: Kartalia-v*.apk
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-cap${{ env.CAP_VERSION }}-v1
 
+      - name: Compilar APK (release)
+        working-directory: _apk/android
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKM" ]; then yes | "$SDKM" --licenses >/dev/null 2>&1 || true; fi
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease
+
+      # ---------------------------------------------------------- alinear y firmar
+      - name: Alinear y firmar el APK
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          KS_PASS_EFF="${KS_PASS:-$KS_DEFAULT_PASS}"
+          export KS_PASS_EFF
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          BT=$(ls -1 "$SDK/build-tools" | sort -V | tail -n1)
+          ZA="$SDK/build-tools/$BT/zipalign"
+          AS="$SDK/build-tools/$BT/apksigner"
+          UNSIGNED=$(ls _apk/android/app/build/outputs/apk/release/*.apk | head -n1)
+          OUT=_apk/dist
+          mkdir -p "$OUT"
+          "$ZA" -p -f 4 "$UNSIGNED" "$OUT/aligned.apk"
+          "$AS" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KS_PASS_EFF --key-pass env:KS_PASS_EFF \
+            --out "$OUT/$APP_NAME-$VERSION_NAME.apk" "$OUT/aligned.apk"
+          "$AS" verify --verbose --print-certs "$OUT/$APP_NAME-$VERSION_NAME.apk" | tee "$OUT/cert.txt"
+          FP=$(grep -m1 'certificate SHA-256 digest' "$OUT/cert.txt" | sed 's/.*: //' | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')
+          echo "CERT_SHA256=$FP" >> "$GITHUB_ENV"
+          cp "$OUT/$APP_NAME-$VERSION_NAME.apk" "$OUT/$APP_NAME.apk"
+          rm -f "$OUT/aligned.apk" "$OUT"/*.idsig
+          echo "Firma SHA-256: $FP"
+
+      - name: Guardar copia del APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: Kartalia-APK
+          path: _apk/dist/Kartalia-*.apk
+          retention-days: 30
+
+      # --------------------------------------------------------------- publicar
       - name: Publicar en Releases
+        working-directory: _apk/dist
         env:
           GH_TOKEN: ${{ github.token }}
-          VER: ${{ steps.ver.outputs.ver }}
-          CODE: ${{ steps.ver.outputs.code }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          TAG="v${VER}"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --clobber
+          TAG="v$VERSION_NAME"
+          cat > notes.md <<EOF
+          $APP_NAME $VERSION_NAME
+
+          APK firmado con la llave estable del proyecto: se instala encima de la versión anterior sin desinstalar.
+
+          Firma SHA-256: $CERT_SHA256
+
+          Descarga directa de la última versión: https://github.com/$GITHUB_REPOSITORY/releases/latest/download/$APP_NAME.apk
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APP_NAME-$VERSION_NAME.apk" "$APP_NAME.apk" --clobber
+            gh release edit "$TAG" --title "$APP_NAME $VERSION_NAME" --notes-file notes.md --latest
           else
-            gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "Kartalia $TAG" --notes "APK firmado de Kartalia $TAG"
+            gh release create "$TAG" "$APP_NAME-$VERSION_NAME.apk" "$APP_NAME.apk" \
+              --title "$APP_NAME $VERSION_NAME" --notes-file notes.md --latest --target "$GITHUB_SHA"
           fi
           {
-            echo "### Kartalia $TAG compilada"
-            echo "- versionCode: $CODE"
-            echo "- Huella de la firma (tiene que ser SIEMPRE la misma): \`$CERT_SHA\`"
-            echo "- Descarga: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo "### APK $VERSION_NAME listo"
+            echo "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo ""
+            echo "Firma SHA-256: $CERT_SHA256"
           } >> "$GITHUB_STEP_SUMMARY"
